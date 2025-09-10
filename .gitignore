@@ -1,3 +1,6 @@
+# Input data
+data/data_for_moderation_analyses.xlsx
+
 # History files
 .Rhistory
 .Rapp.history
