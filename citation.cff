@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you cite our work, please cite it as below."
+title: "Scripts used for the paper 'PTSD Symptom Trajectories in the Wake of Traumatic Events: a Systematic Review and Meta-Analysis of 20 Years of Research'"
+type: software
+authors:
+- family-names: "Coimbra"
+  given-names: "Bruno"
+  affiliation: "Utrecht University"
+  orcid: "https://orcid.org/0000-0001-5092-9625"
+- family-names: "van Zuiden"
+  given-names: "Mirjam"
+  affiliation: "Utrecht University"
+  orcid: "https://orcid.org/0000-0002-1225-2702"
+- family-names: "van de Schoot"
+  given-names: "Rens"
+  affiliation: "Utrecht University"
+  email: "a.g.j.vandeschoot@uu.nl"
+  orcid: "https://orcid.org/0000-0001-7736-2091"
+abstract: "Scripts used for the paper 'PTSD Symptom Trajectories in the Wake of Traumatic Events: a Systematic Review and Meta-Analysis of 20 Years of Research'."
+repository-code: "https://github.com/Rensvandeschoot/FORAS_scripts_meta-analysis"
