@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/1054345057.svg)](https://doi.org/10.5281/zenodo.17098304)
+
 # Overview
 
 This repository is part of the **Hunt for the Last Relevant Paper** project,
