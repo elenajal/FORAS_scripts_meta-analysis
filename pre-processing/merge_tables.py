@@ -234,4 +234,4 @@ merged_df["Worsened_improved"] = merged_df["Worsened_improved"].round().astype("
 merged_df["TP_assessments"] = merged_df["TP_assessments"].round().astype("Int64")
 
 # 10. Save to file
-merged_df.to_csv("../data/data_for_moderation_analyses.csv", index=False, sep=';')
+merged_df.to_csv(".ouptut/data_for_moderation_analyses.csv", index=False, sep=';')
