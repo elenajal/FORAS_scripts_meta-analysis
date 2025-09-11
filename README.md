@@ -42,7 +42,7 @@ Clone the repository:
 
 Install dependencies: install R Studio and the following R packages: Metafor, lme4, influence.ME
 
-Run the R script GLMM_Final.R
+Knit the R script `Prevelances_analysis.Rmd`
    
 
 ## Funding 
