@@ -5,7 +5,7 @@ pre-registered  as "[Trajectories of PTSD Following Traumatic Events: A
 Systematic and Multi-database Review]
 (https://www.crd.york.ac.uk/prospero/display_record.php?RecordID=494027)".
 
-The current repository is focusing on the scripts used for the meta-analysis.
+The current repository is focusing on the scripts used for the meta-analysis (Pre-print: https://doi.org/10.31219/osf.io/fkjb2_v1).
 
 # Contents
 
