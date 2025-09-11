@@ -9,20 +9,21 @@ The current repository is focusing on the scripts used for the meta-analysis.
 
 # Contents
 
-## [FILE NAME]
+## GLMM_Final.R
 
-- **Purpose**: xxx.
+- **Purpose**: Processing and applying generalized linear mixed methods as an meta-analytical approach to PTSD symptoms trajectories.
 
 - **Features**:
-  - xxx.
-  - xxx
+  - Estimate relative prevalence for PTSD symptoms trajectories
+  - Moderation analysis 
+  - Sensitive analysis 
 
 
 ## Required Input Datasets
 
 The following datasets are required to run the notebooks:
 
-1. **`data_for_moderation_analyses.xlsx`**
+1. **`data_for_moderation_analyses.csv`**
    - The primary dataset with all extracted data from the included studies.
 
 
@@ -37,19 +38,9 @@ Clone the repository:
    cd hunt-for-the-last-relevant-paper
    ```
 
-Install dependencies: Ensure you have Python and Jupyter installed, along with necessary Python libraries:
+Install dependencies: install R Studio and the following R packages: Metafor, lme4, influence.ME
 
-   ```bash
-	pip install pandas numpy
-   ```
-
-Place the required input datasets in the data/ directory and open the notebooks:
-
-   ```bash
-XXX
-   ```
-
-Follow the steps in the notebook.
+Run the R script GLMM_Final.R
    
 
 ## Funding 
