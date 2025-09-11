@@ -18,7 +18,7 @@ The current repository is focusing on the scripts used for the meta-analysis (Pr
    - Clean up the data
    - Ensure columns have the correct data types
    - Test whether each record can be matched correctly between the three files
-   - Outputs the `data_for_moderation_analyses.csv` in the `./data` folder
+   - Outputs the `data_for_moderation_analyses.csv` in the `./pre-processing/output` folder
 
 # Load the data
 
@@ -39,6 +39,7 @@ The following datasets are required to run the notebooks:
 
 1. **`data_for_moderation_analyses.csv`**
    - The primary dataset with all extracted data from the included studies.
+   - Located in `./pre-processing/output`
 
 ## Usage
 
