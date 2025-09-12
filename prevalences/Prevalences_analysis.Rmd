@@ -80,12 +80,12 @@ We provide additional descriptives based on the Low trajectory variable, using t
 # Copy the dataset to avoid overwriting the original
 df_low <- df_moderation
 
-# Ensure Low_rate is numeric
-df_low$Low_rate <- as.numeric(df_low$Low_rate)
+# Ensure Low_percentage is numeric
+df_low$Low_percentage <- as.numeric(df_low$Low_percentage)
 
 
 # Calculate Low_n as (percentage / 100) * sample size
-df_low$Low_n <- round((df_low$Low_rate / 100) * df_low$Sample_Size)
+df_low$Low_n <- round((df_low$Low_percentage / 100) * df_low$Sample_Size)
 
 # Total number of individuals classified as Low (ignoring missingness in other variables)
 total_Low_n <- sum(df_low$Low_n, na.rm = TRUE)
@@ -161,7 +161,7 @@ df_low_sens1 <- df_low
 
 # Subset: Exclude studies with Low trajectory ≥90%
 df_low_sens1 <- df_low_sens1 %>%
-  filter(Low_rate < 90,
+  filter(Low_percentage < 90,
          !is.na(Low_n),
          !is.na(Sample_Size))
 
@@ -353,18 +353,18 @@ We estimate the pooled prevalence of the Decreasing trajectory using a Generaliz
 # Copy the data
 df_Decreasing <- df_moderation
 
-# Ensure Decreasing_rate is numeric
-df_Decreasing$Decreasing_rate <- as.numeric(df_Decreasing$Decreasing_rate)
+# Ensure Decreasing_percentage is numeric
+df_Decreasing$Decreasing_percentage <- as.numeric(df_Decreasing$Decreasing_percentage)
 
 
 # Calculate Decreasing_n
-df_Decreasing$Decreasing_n <- round((df_Decreasing$Decreasing_rate / 100) * df_Decreasing$Sample_Size)
+df_Decreasing$Decreasing_n <- round((df_Decreasing$Decreasing_percentage / 100) * df_Decreasing$Sample_Size)
 
 # Total number of individuals classified as Decreasing
 total_Decreasing_n <- sum(df_Decreasing$Decreasing_n, na.rm = TRUE)
 
 # Number of unique studies with Decreasing data
-unique_Decreasing_studies <- length(unique(df_Decreasing$Study[!is.na(df_Decreasing$Decreasing_rate)]))
+unique_Decreasing_studies <- length(unique(df_Decreasing$Study[!is.na(df_Decreasing$Decreasing_percentage)]))
 
 # Display as a table
 Decreasing_info <- data.frame(
@@ -384,8 +384,8 @@ knitr::kable(Decreasing_info, caption = "Descriptive Statistics for Decreasing T
 # Compute raw number of recoveries BEFORE rounding
 df_Decreasing <- df_moderation %>%
   mutate(
-    Decreasing_rate = as.numeric(Decreasing_rate),
-    Decreasing_prop = Decreasing_rate / 100,
+    Decreasing_percentage = as.numeric(Decreasing_percentage),
+    Decreasing_prop = Decreasing_percentage / 100,
     Decreasing_n_raw = Decreasing_prop * Sample_Size
   )
 
@@ -611,18 +611,18 @@ We estimate the pooled prevalence of the Increasing trajectory using a Generaliz
 # Copy the data
 df_Increasing <- df_moderation
 
-# Ensure Increasing_rate is numeric
-df_Increasing$Increasing_rate <- as.numeric(df_Increasing$Increasing_rate)
+# Ensure Increasing_percentage is numeric
+df_Increasing$Increasing_percentage <- as.numeric(df_Increasing$Increasing_percentage)
 
 
 # Calculate Increasing_n
-df_Increasing$Increasing_n <- round((df_Increasing$Increasing_rate / 100) * df_Increasing$Sample_Size)
+df_Increasing$Increasing_n <- round((df_Increasing$Increasing_percentage / 100) * df_Increasing$Sample_Size)
 
 # Total number of individuals classified as Increasing
 total_Increasing_n <- sum(df_Increasing$Increasing_n, na.rm = TRUE)
 
 # Number of unique studies with Increasing data
-unique_Increasing_studies <- length(unique(df_Increasing$Study[!is.na(df_Increasing$Increasing_rate)]))
+unique_Increasing_studies <- length(unique(df_Increasing$Study[!is.na(df_Increasing$Increasing_percentage)]))
 
 # Display as a table
 Increasing_info <- data.frame(
@@ -861,18 +861,18 @@ We estimate the pooled prevalence of the High trajectory using a Generalized Lin
 # Copy the data
 df_High <- df_moderation
 
-# Ensure High_rate is numeric
-df_High$High_rate <- as.numeric(df_High$High_rate)
+# Ensure High_percentage is numeric
+df_High$High_percentage <- as.numeric(df_High$High_percentage)
 
 # Calculate High_n
-df_High$High_n <- round((df_High$High_rate / 100) * df_High$Sample_Size)
+df_High$High_n <- round((df_High$High_percentage / 100) * df_High$Sample_Size)
 
 
 # Total number of individuals classified as High
 total_High_n <- sum(df_High$High_n, na.rm = TRUE)
 
 # Number of unique studies with High data
-unique_High_studies <- length(unique(df_High$Study[!is.na(df_High$High_rate)]))
+unique_High_studies <- length(unique(df_High$Study[!is.na(df_High$High_percentage)]))
 
 # Display as a table
 High_info <- data.frame(
@@ -1111,15 +1111,15 @@ knitr::kable(glmer_summary_High, caption = "High Trajectory Estimate from glmer 
 df_moderate <- df_moderation
 
 
-# Ensure Moderate_rate is numeric
-df_moderate$Moderate_rate <- as.numeric(df_moderate$Moderate_rate)
+# Ensure Moderate_percentage is numeric
+df_moderate$Moderate_percentage <- as.numeric(df_moderate$Moderate_percentage)
 
 # Calculate Moderate_n
-df_moderate$Moderate_n <- round((df_moderate$Moderate_rate / 100) * df_moderate$Sample_Size)
+df_moderate$Moderate_n <- round((df_moderate$Moderate_percentage / 100) * df_moderate$Sample_Size)
 
 total_Moderate_n <- sum(df_moderate$Moderate_n, na.rm = TRUE)
 
-unique_Moderate_studies <- length(unique(df_moderate$Study[!is.na(df_moderate$Moderate_rate)]))
+unique_Moderate_studies <- length(unique(df_moderate$Study[!is.na(df_moderate$Moderate_percentage)]))
 
 Moderate_info <- data.frame(
   Description = c("Total number of individuals in Moderate trajectory", "Number of unique studies with Moderate data"),

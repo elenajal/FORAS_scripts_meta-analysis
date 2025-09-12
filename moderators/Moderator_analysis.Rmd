@@ -76,14 +76,14 @@ Here we fit separate binomial GLMMs (random intercept for `Study`) for each mode
 ```{r low-moderators-setup}
 
 df_low <- df_moderation %>%
-  filter(!is.na(Low_rate))
+  filter(!is.na(Low_percentage))
 
-# Ensure Low_rate is numeric
-df_low$Low_rate <- as.numeric(df_low$Low_rate)
+# Ensure Low_percentage is numeric
+df_low$Low_percentage <- as.numeric(df_low$Low_percentage)
 
 # Calculate Low_n as (percentage / 100) * sample size
 df_low$Low_n <-
-  round((df_low$Low_rate / 100) * df_low$Sample_Size)
+  round((df_low$Low_percentage / 100) * df_low$Sample_Size)
 
 
 ```
@@ -485,14 +485,14 @@ plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Health_First)No"])
 ```{r Decreasing-moderators-setup}
 
 df_Decreasing <- df_moderation %>%
-  filter(!is.na(Decreasing_rate))
+  filter(!is.na(Decreasing_percentage))
 
-# Ensure Decreasing_rate is numeric
-df_Decreasing$Decreasing_rate <- as.numeric(df_Decreasing$Decreasing_rate)
+# Ensure Decreasing_percentage is numeric
+df_Decreasing$Decreasing_percentage <- as.numeric(df_Decreasing$Decreasing_percentage)
 
 # Calculate Decreasing_n as (percentage / 100) * sample size
 df_Decreasing$Decreasing_n <-
-  round((df_Decreasing$Decreasing_rate / 100) * df_Decreasing$Sample_Size)
+  round((df_Decreasing$Decreasing_percentage / 100) * df_Decreasing$Sample_Size)
 
 
 ```
@@ -894,14 +894,14 @@ plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Health_First)No"])
 ```{r Increasing-moderators-setup}
 
 df_Increasing <- df_moderation %>%
-  filter(!is.na(Increasing_rate))
+  filter(!is.na(Increasing_percentage))
 
-# Ensure Increasing_rate is numeric
-df_Increasing$Increasing_rate <- as.numeric(df_Increasing$Increasing_rate)
+# Ensure Increasing_percentage is numeric
+df_Increasing$Increasing_percentage <- as.numeric(df_Increasing$Increasing_percentage)
 
 # Calculate Increasing_n as (percentage / 100) * sample size
 df_Increasing$Increasing_n <-
-  round((df_Increasing$Increasing_rate / 100) * df_Increasing$Sample_Size)
+  round((df_Increasing$Increasing_percentage / 100) * df_Increasing$Sample_Size)
 
 ```
 ### Descriptives
@@ -1303,17 +1303,15 @@ plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Health_First)No"])
 
 df_High <- df_moderation
 
-df_High$High_rate <- (df_High$High_percentage) / 100
-
 df_High <- df_High %>%
-  filter(!is.na(High_rate))
+  filter(!is.na(High_percentage))
 
 # Calculate High_n as (percentage / 100) * sample size
 df_High$High_n <-
-  round((df_High$High_rate / 100) * df_High$Sample_Size)
+  round((df_High$High_percentage / 100) * df_High$Sample_Size)
 
-# Ensure High_rate is numeric
-df_High$High_rate <- as.numeric(df_High$High_rate)
+# Ensure High_percentage is numeric
+df_High$High_percentage <- as.numeric(df_High$High_percentage)
 
 
 ```
@@ -1718,14 +1716,14 @@ df_Moderate <- df_moderation
 
 
 df_Moderate <- df_Moderate %>%
-  filter(!is.na(Moderate_rate))
+  filter(!is.na(Moderate_percentage))
 
 # Calculate Moderate_n as (percentage / 100) * sample size
 df_Moderate$Moderate_n <-
-  round((df_Moderate$Moderate_rate / 100) * df_Moderate$Sample_Size)
+  round((df_Moderate$Moderate_percentage / 100) * df_Moderate$Sample_Size)
 
-# Ensure Moderate_rate is numeric
-df_Moderate$Moderate_rate <- as.numeric(df_Moderate$Moderate_rate)
+# Ensure Moderate_percentage is numeric
+df_Moderate$Moderate_percentage <- as.numeric(df_Moderate$Moderate_percentage)
 
 
 ```
