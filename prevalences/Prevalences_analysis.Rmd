@@ -34,6 +34,7 @@ library(metafor)
 library(lme4)
 library(influence.ME)
 library(dplyr)
+library(gt)
 ```
 
 ## Load Data
@@ -91,12 +92,12 @@ df_low$Low_n <- round((df_low$Low_percentage / 100) * df_low$Sample_Size)
 total_Low_n <- sum(df_low$Low_n, na.rm = TRUE)
 
 # Number of unique studies (assumes a column Study exists)
-unique_studies <- length(unique(df_low$Study))
+unique_Low_studies <- length(unique(df_low$Study[!is.na(df_low$Low_percentage)]))
 
 # Display as a table
 additional_info <- data.frame(
   Description = c("Total number of individuals in Low trajectory", "Number of unique studies"),
-  Value = format(c(total_Low_n, unique_studies), big.mark = ",")
+  Value = format(c(total_Low_n, unique_Low_studies), big.mark = ",")
 )
 
 knitr::kable(additional_info, caption = "Additional Descriptives for Low Trajectory Analysis")
@@ -1291,5 +1292,92 @@ final_summary <- data.frame(
 
 knitr::kable(final_summary, caption = "Moderate  Trajectory Estimate from glmer Model")
 ```
+# Tables for Paper
+## Prevalences Summary Table (Table 1)
+```{r prevalences-summary-table}
+# Trajectory order & fitted models
+traj_order <- c("Low","Decreasing","Increasing","High","Moderate")
 
+fits <- list(
+  Low        = glmm_Low,
+  Decreasing = glmm_Decreasing,
+  Increasing = glmm_Increasing,
+  High       = glmm_High,
+  Moderate   = glmm_Moderate
+)
+
+trajectory_counts <- tibble(
+  trajectory = factor(traj_order, levels = traj_order),
+  N = c(
+    total_Low_n,
+    total_Decreasing_n,
+    total_Increasing_n,
+    total_High_n,
+    total_Moderate_n
+  )
+) |>
+  mutate(pct = round(100 * N / sum(N), 1))
+
+k_vec <- c(
+  Low        = as.integer(unique_Low_studies),
+  Decreasing = as.integer(unique_Decreasing_studies),
+  Increasing = as.integer(unique_Increasing_studies),
+  High       = as.integer(unique_High_studies),
+  Moderate   = as.integer(unique_Moderate_studies)
+)
+
+# build one row per trajectory from the GLMM fit
+row_from <- function(name, fit) {
+  pr <- predict(fit, transf = transf.ilogit)
+  tibble(
+    trajectory = name,
+    rel_prev   = sprintf("%.1f%%", pr$pred * 100),
+    ci_95      = sprintf("%.1f to %.1f%%", pr$ci.lb * 100, pr$ci.ub * 100),
+    k          = k_vec[[name]],
+    N_pct      = sprintf(
+                   "%s (%.1f%%)",
+                   format(trajectory_counts$N[trajectory_counts$trajectory == name], big.mark = ","),
+                   trajectory_counts$pct[trajectory_counts$trajectory == name]
+                 ),
+    logit      = round(unname(coef(fit)[1]), 2),
+    tau2       = round(as.numeric(fit$tau2), 2)
+  )
+}
+
+table1_df <- bind_rows(lapply(traj_order, function(nm) row_from(nm, fits[[nm]])))
+
+# Render table
+table1_df |>
+  gt() |>
+  cols_label(
+    trajectory = "PTSD Symptom Trajectory",
+    rel_prev   = "Relative Prevalence",
+    ci_95      = "95%(CI)",
+    k          = "k",
+    N_pct      = "N (%)",
+    logit      = "Logit Estimate",
+    tau2       = html("&tau;<sup>2</sup>")
+  ) |>
+  tab_header(
+    title    = md("**Table 1**"),
+    subtitle = md("Relative Prevalence of PTSD Symptom Trajectories")
+  ) |>
+  cols_align("left",   columns = trajectory) |>
+  cols_align("center", columns = c(rel_prev, ci_95, k, N_pct, logit, tau2)) |>
+  fmt_integer(columns = k, use_seps = TRUE) |>
+  fmt_number(columns = c(logit, tau2), decimals = 2) |>
+  opt_row_striping() |>
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels(everything())
+  ) |>
+  tab_options(
+    table.width = pct(100),
+    data_row.padding = px(6),
+    table.font.size = px(13)
+  ) |>
+  tab_source_note(
+    source_note = html("<em>Note.</em> k represents the number of unique studies. Logit estimate reflects pooled prevalence on a log-odds scale. &tau;<sup>2</sup> indicates between-study heterogeneity; values &gt; 0.50 suggest substantial heterogeneity.")
+  )
+```
 ------------------------------------------------------------------------
