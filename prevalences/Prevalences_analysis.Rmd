@@ -41,7 +41,7 @@ library(gt)
 
 ```{r load-data}
 # load data
-df_moderation <- read.csv2("../pre-processing/output/data_for_moderation_analyses.csv", dec = ".")
+df_moderation <- read.csv2("../merging_and_testing/output/data_for_moderation_analyses.csv", dec = ".")
 
 # Display the first rows to check the data
 head(df_moderation)
@@ -67,7 +67,37 @@ summary_table <- data.frame(
 knitr::kable(summary_table, caption = "Descriptive Statistics of the Dataset")
 
 ```
+### Descriptives Tables for All Studies
 
+```{r descriptives-studies-table}
+overview <- tibble(
+  `Authors (Study)` = df_moderation$Study,
+  `Sample Size`     = df_moderation$Sample_Size,
+  `Mean Age`        = df_moderation$Mean_age,
+  `Percentage Women`= df_moderation$Percentage_women,
+  `Assessed Trauma Type` = df_moderation$Assessed_trauma_type,
+  `Military`        = df_moderation$Military,
+  `Number of TP assessments`  = df_moderation$TP_assessments,
+  `Number of Trajectories Found` = df_moderation$N_trajectories
+
+  )
+
+if (knitr::is_html_output() || knitr::is_latex_output()) {
+  fmt <- if (knitr::is_latex_output()) "latex" else "html"
+
+  overview %>%
+    mutate(
+      `Sample Size` = format(`Sample Size`, big.mark = ",", trim = TRUE),
+      `Mean Age` = ifelse(is.na(`Mean Age`), NA, sprintf("%.1f", `Mean Age`)),
+      `Percentage Women` = ifelse(is.na(`Percentage Women`), NA, sprintf("%.1f%%", `Percentage Women`))
+    ) |>
+    knitr::kable(format = fmt, caption = "Study Overview", booktabs = TRUE, linesep = "") |>
+    kableExtra::kable_styling(full_width = FALSE, position = "left",
+                              bootstrap_options = c("striped", "hover", "condensed")) |>
+    kableExtra::column_spec(1, bold = TRUE) |>
+    kableExtra::scroll_box(height = "470px")
+}
+```
 # Prevalences
 
 ## 🚀 Low Symptom Trajectory
