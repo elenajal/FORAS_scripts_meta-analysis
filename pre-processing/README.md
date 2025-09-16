@@ -1,4 +1,4 @@
-# README — Merge study tables
+# Scipt for merging data extraction tables
 
 ## Overview
 This script merges study-level metadata, model results, and Grolts quality scores into a single, analysis‑ready CSV. It performs sanity checks (duplicates, overlaps, and missing IDs), harmonises columns, coerces types, and derives a simple US/Other location flag.
@@ -23,10 +23,5 @@ Place these in `../data` (one level **above** the script):
 
 ## Output
 `./output/data_for_moderation_analyses.csv` — tidy dataset with selected variables, numeric types coerced, and a `Location_US` flag; delimiter `;`.
-
-## Funding
-The research is supported by the Dutch Research Council under grant number 406.22.GO.048.
-
-## Contact
 For questions contact Rens van de Schoot (a.g.j.vandeschoot@uu.nl).
 
