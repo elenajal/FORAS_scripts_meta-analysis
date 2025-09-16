@@ -1,3 +1,29 @@
+"""Data preparation pipeline for moderation analyses.
+
+This script merges extraction sheets, runs sanity checks, enforces a stable output schema,
+and writes a semicolon-separated CSV for downstream analyses.
+
+Overview of steps:
+1) Load three input files from ../data:
+   - Data_extraction_general_data.xlsx
+   - Data_extraction_model_results.xlsx
+   - grolts_scores.csv
+2) Normalize IDs (MID), run sanity checks (duplicates, overlaps, missing IDs).
+3) Merge the general and model-results sheets on MID (inner join).
+4) Extract a base MID to join Grolts scores (left join).
+5) Filter to rows marked for analysis using "Final selection" from the general sheet.
+6) Build location fields: pass-through free-text Location and binary Location_US (US vs Other).
+7) Enforce the ANALYSIS_COLS schema (add missing columns as NA, reorder).
+8) Clean conservative "NR"/"NA" tokens in select columns; coerce float/int dtypes.
+9) Save to ./output/data_for_moderation_analyses.csv (semicolon-separated).
+
+Usage:
+    python prepare_moderation_data.py
+
+Requirements:
+    pandas, numpy, openpyxl (for .xlsx)
+"""
+
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -5,11 +31,12 @@ import numpy as np
 # ----------------------------
 # Config
 # ----------------------------
+# Input/output directories relative to this script's location.
 DATA = Path("../data")
 OUT = Path("./output")
 OUT.mkdir(parents=True, exist_ok=True)
 
-# Columns that must exist later (schema contract)
+#: Columns guaranteed to exist in the final output (schema contract).
 ANALYSIS_COLS = [
     "Study","Cohorts","MID","Grolts","Sample_Size","Mean_age","Developmental_age",
     "Percentage_women","Percentage_minority","Percentage_partner","High_education",
@@ -24,9 +51,10 @@ ANALYSIS_COLS = [
     "Merging","Relabeling","Worsened_improved","Worsened_improved_percentage",
 ]
 
-# Which source column holds free-text location (if present)
+#: Preferred source column for free-text location (if present).
 LOC_COL = "Location? Where the study is based"
 
+#: Columns coerced to float dtype.
 FLOAT_COLS = [
     "Mean_age","Percentage_women","Percentage_minority","Percentage_partner",
     "High_education","Trauma_TP1","TP1_TPX","Trauma_TPX","Entropy",
@@ -36,6 +64,7 @@ FLOAT_COLS = [
     "Worsened_improved_percentage",
 ]
 
+#: Columns coerced to nullable integer dtype (`Int64`).
 INT_COLS = [
     "Cohorts","Sample_Size","N_trajectories","Low","Decreasing","Increasing",
     "High","Moderate","Relapsing","Worsened_improving","Merging","Relabeling",
@@ -46,6 +75,24 @@ INT_COLS = [
 # Helpers
 # ----------------------------
 def _normalize_mid(s: pd.Series) -> pd.Series:
+    """Normalize ID strings (MID).
+
+    Operations:
+      - cast to string
+      - strip surrounding whitespace
+      - collapse internal whitespace
+      - uppercase
+
+    Parameters
+    ----------
+    s : pd.Series
+        Series containing MID values.
+
+    Returns
+    -------
+    pd.Series
+        Normalized MID series (dtype: string/object as input).
+    """
     return (
         s.astype(str)
          .str.strip()
@@ -54,17 +101,55 @@ def _normalize_mid(s: pd.Series) -> pd.Series:
     )
 
 def _clean_nr(series: pd.Series) -> pd.Series:
+    """Replace common 'not reported' tokens with NaN conservatively.
+
+    Tokens matched (case-insensitive, surrounded by optional whitespace):
+        NR, N/R, N.R., NA, N.A.
+
+    Parameters
+    ----------
+    series : pd.Series
+        Input series (typically object/string).
+
+    Returns
+    -------
+    pd.Series
+        Series where exact matches to the above tokens are set to np.nan.
+    """
     s = series.astype(str)
     mask = s.str.fullmatch(r"\s*(NR|N/R|N\.R\.|NA|N\.A\.)\s*", case=False, na=False)
     return series.mask(mask, np.nan)
 
 def _ensure_columns(df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
+    """Ensure all columns exist in DataFrame, adding missing as NA (object dtype).
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input DataFrame.
+    cols : list[str]
+        Required columns.
+
+    Returns
+    -------
+    pd.DataFrame
+        Same DataFrame with any missing columns added (filled with NA).
+    """
     missing = [c for c in cols if c not in df.columns]
     for c in missing:
         df[c] = pd.Series(pd.NA, index=df.index, dtype="object")
     return df
 
-def print_duplicates(df, name):
+def print_duplicates(df: pd.DataFrame, name: str) -> None:
+    """Print duplicate MID values (if any) for a dataset.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Dataset to inspect.
+    name : str
+        Label used in the printed output.
+    """
     dupes = df[df.duplicated("MID", keep=False)]
     if not dupes.empty:
         print(f"\n🔁 Non-unique MIDs in {name}:")
@@ -72,15 +157,44 @@ def print_duplicates(df, name):
     else:
         print(f"\n✅ No duplicate MIDs in {name}.")
 
-def print_common_mids(df1, df2, name1, name2, expected_count=None, show=0):
+def print_common_mids(
+    df1: pd.DataFrame,
+    df2: pd.DataFrame,
+    name1: str,
+    name2: str,
+    expected_count: int | None = None,
+    show: int = 0,
+) -> set:
+    """Print counts of unique and overlapping MID values across two datasets.
+
+    Parameters
+    ----------
+    df1, df2 : pd.DataFrame
+        Datasets to compare (must contain 'MID').
+    name1, name2 : str
+        Labels used in the printed output.
+    expected_count : int | None, optional
+        If provided, prints a checkmark/cross depending on whether the
+        overlap equals this expected count.
+    show : int, optional
+        Unused here (kept for interface symmetry).
+
+    Returns
+    -------
+    set
+        Set of common MID values.
+    """
     for df, nm in [(df1, name1), (df2, name2)]:
         if "MID" not in df.columns:
             print(f"❗[{nm}] column 'MID' not found.")
             return set()
+
     mids1 = set(df1["MID"].dropna())
     mids2 = set(df2["MID"].dropna())
     common = mids1 & mids2
+
     u1, u2, uc = len(mids1), len(mids2), len(common)
+
     if expected_count is None:
         print(f"\n🔗 Common MIDs between {name1} and {name2}: {uc}")
     else:
@@ -88,26 +202,59 @@ def print_common_mids(df1, df2, name1, name2, expected_count=None, show=0):
         print(f"\n{status} Common MIDs between {name1} and {name2}: {uc} (expected {expected_count})")
 
     print(f"{name1} unique MIDs: {u1} | {name2} unique MIDs: {u2}")
+    return common
 
-def print_missing_mids(source_df, target_df, source_name, target_name, contains=False, show=0):
+def print_missing_mids(
+    source_df: pd.DataFrame,
+    target_df: pd.DataFrame,
+    source_name: str,
+    target_name: str,
+    contains: bool = False,
+    show: int = 0,
+) -> list[str]:
+    """Print which MIDs in source are missing from target.
+
+    Parameters
+    ----------
+    source_df, target_df : pd.DataFrame
+        Datasets to compare (must contain 'MID').
+    source_name, target_name : str
+        Labels used in output messages.
+    contains : bool, default False
+        If True, consider a source MID present if it **starts with** any target MID
+        (useful when source MIDs have suffixes). Otherwise, require exact match.
+    show : int, default 0
+        If > 0, prints up to `show` example missing IDs.
+
+    Returns
+    -------
+    list[str]
+        List of missing MID values from the source perspective.
+    """
     for df, nm in [(source_df, source_name), (target_df, target_name)]:
         if "MID" not in df.columns:
             print(f"❗[{nm}] column 'MID' not found.")
             return []
+
     s = source_df["MID"].dropna().astype(str)
     t = target_df["MID"].dropna().astype(str)
+
     if contains:
         prefixes = tuple(t.unique())
         present_mask = s.str.startswith(prefixes) if prefixes else s.apply(lambda _: False)
     else:
         present_mask = s.isin(set(t))
+
     missing = s[~present_mask].unique()
     count = len(missing)
+
     status = "✅" if count == 0 else "❌"
     print(f"\n{status} MIDs in {source_name} but not in {target_name}: {count}")
+
     if show and count:
         examples = sorted(missing)[:show]
         print(f"Examples ({len(examples)} of {count}): {examples}")
+
     return missing.tolist()
 
 # ----------------------------
@@ -140,7 +287,23 @@ for _df in (df_general, df_model_results, grolts_scores):
 # ----------------------------
 # Sanity checks
 # ----------------------------
-def run_sanity_checks(df_general, df_model_results, grolts_scores):
+def run_sanity_checks(
+    df_general: pd.DataFrame,
+    df_model_results: pd.DataFrame,
+    grolts_scores: pd.DataFrame,
+) -> None:
+    """Run basic sanity checks and print summaries.
+
+    Checks:
+      1) Duplicate MIDs within each dataset.
+      2) Common MIDs across pairs of datasets (optionally assert expected counts).
+      3) Missing MIDs between datasets (exact vs prefix match).
+
+    Parameters
+    ----------
+    df_general, df_model_results, grolts_scores : pd.DataFrame
+        Input datasets.
+    """
     datasets = {
         "df_general": df_general,
         "df_model_results": df_model_results,
@@ -207,7 +370,8 @@ else:
 merged_df["Location"] = loc_src
 loc_norm = loc_src.fillna("").str.strip().str.upper()
 merged_df["Location_US"] = np.where(
-    loc_norm.str.fullmatch(r"(US|USA|UNITED STATES|UNITED STATES OF AMERICA)\.?", case=False, na=False),
+    loc_norm.str.fullmatch(r"(US|USA|UNITED STATES|UNITED STATES OF AMERICA)\.?",
+                           case=False, na=False),
     "US",
     "Other",
 )
