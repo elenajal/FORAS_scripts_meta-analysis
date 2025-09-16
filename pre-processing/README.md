@@ -23,5 +23,3 @@ Place these in `../data` (one level **above** the script):
 
 ## Output
 `./output/data_for_moderation_analyses.csv` — tidy dataset with selected variables, numeric types coerced, and a `Location_US` flag; delimiter `;`.
-For questions contact Rens van de Schoot (a.g.j.vandeschoot@uu.nl).
-
