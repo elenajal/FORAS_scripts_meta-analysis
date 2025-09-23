@@ -79,7 +79,8 @@ overview <- tibble(
   `Number of TP assessments`  = df_moderation$TP_assessments,
   `Number of Trajectories Found` = df_moderation$N_trajectories
 
-  )
+  ) |> 
+  arrange(`Authors (Study)`)
 
 if (knitr::is_html_output() || knitr::is_latex_output()) {
   fmt <- if (knitr::is_latex_output()) "latex" else "html"
@@ -1417,4 +1418,5 @@ table1_df |>
   )
 ```
 ------------------------------------------------------------------------
+
 
