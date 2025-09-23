@@ -76,11 +76,11 @@ overview <- tibble(
   `Mean Age`        = df_moderation$Mean_age,
   `Percentage Women`= df_moderation$Percentage_women,
   `Assessed Trauma Type` = df_moderation$Assessed_trauma_type,
-  `Military`        = df_moderation$Military,
   `Number of TP assessments`  = df_moderation$TP_assessments,
   `Number of Trajectories Found` = df_moderation$N_trajectories
 
-  )
+  ) |> 
+  arrange(`Authors (Study)`)
 
 if (knitr::is_html_output() || knitr::is_latex_output()) {
   fmt <- if (knitr::is_latex_output()) "latex" else "html"
@@ -1418,3 +1418,5 @@ table1_df |>
   )
 ```
 ------------------------------------------------------------------------
+
+
