@@ -211,7 +211,7 @@ merged_df["Moderate_percentage"] = merged_df["Moderate_percentage"].astype("floa
 merged_df["Relapsing_rate"] = merged_df["Relapsing_rate"].astype("float")
 merged_df["Worsened_improved_percentage"] = merged_df["Worsened_improved_percentage"].astype("float")
 
-merged_df["Sample_name)"] = merged_df["Cohorts"].round().astype("float")
+merged_df["Sample_name)"] = merged_df["Sample_name"].round().astype("float")
 merged_df["Sample_Size"] = merged_df["Sample_Size"].round().astype("Int64")
 merged_df["N_trajectories"] = merged_df["N_trajectories"].round().astype("Int64")
 merged_df["Low"] = merged_df["Low"].round().astype("Int64")
