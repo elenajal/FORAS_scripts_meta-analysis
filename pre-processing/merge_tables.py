@@ -109,7 +109,7 @@ merged_df["Location_US"] = merged_df["Location? Where the study is based"].apply
 merged_df = merged_df[
     [
         "Study",
-        "Cohorts",
+        "Cohort(s) Names",
         "MID",
         "Grolts",
         "Sample_Size",
@@ -129,7 +129,6 @@ merged_df = merged_df[
         "Occupational_trauma",
         "Trauma_exposure",
         "Scale_moderator",
-        "Diagnostic_moderator",
         "Diagnostic_DSM",
         "Trajectory_analysis",
         "TP_assessments",
@@ -158,7 +157,7 @@ merged_df = merged_df[
         "Relapsing_rate",
         "Merging",
         "Relabeling",
-        "Worsened_improved",
+        "Worsened_improved_rate",
         "Worsened_improved_percentage",
     ]
 ]
