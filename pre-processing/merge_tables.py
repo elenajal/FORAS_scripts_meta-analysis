@@ -211,7 +211,7 @@ merged_df["Moderate_percentage"] = merged_df["Moderate_percentage"].astype("floa
 merged_df["Relapsing_rate"] = merged_df["Relapsing_rate"].astype("float")
 merged_df["Worsened_improved_percentage"] = merged_df["Worsened_improved_percentage"].astype("float")
 
-merged_df["Cohorts"] = merged_df["Cohorts"].round().astype("Int64")
+merged_df["Cohort(s) name(s)"] = merged_df["Cohorts"].round().astype("float")
 merged_df["Sample_Size"] = merged_df["Sample_Size"].round().astype("Int64")
 merged_df["N_trajectories"] = merged_df["N_trajectories"].round().astype("Int64")
 merged_df["Low"] = merged_df["Low"].round().astype("Int64")
@@ -223,7 +223,7 @@ merged_df["Relapsing"] = merged_df["Relapsing"].round().astype("Int64")
 merged_df["Worsened_improving"] = merged_df["Worsened_improving"].round().astype("Int64")
 merged_df["Merging"] = merged_df["Merging"].round().astype("Int64")
 merged_df["Relabeling"] = merged_df["Relabeling"].round().astype("Int64")
-merged_df["Worsened_improved"] = merged_df["Worsened_improved"].round().astype("Int64")
+merged_df["Worsened_improved_rate"] = merged_df["Worsened_improved_rate"].round().astype("Int64")
 merged_df["TP_assessments"] = merged_df["TP_assessments"].round().astype("Int64")
 
 # 9. Save to file
