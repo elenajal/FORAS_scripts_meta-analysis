@@ -4,10 +4,8 @@ import re
 
 # Load the data
 df_general = pd.read_excel("../data/Data_extraction_general_data.xlsx")
-df_general = df_general[df_general["Final Selection"] != 0]
 
 df_model_results = pd.read_excel("../data/Data_extraction_model_results.xlsx")
-df_model_results = df_model_results[df_model_results["Final selection"] != 0]
 
 grolts_scores = pd.read_csv("../data/grolts_scores.csv")
 grolts_scores = grolts_scores[["paper_id", "score"]]
@@ -102,16 +100,12 @@ merged_df = merged_df.merge(
 merged_df.drop(columns=["MID_base", "MID_y"], inplace=True)
 merged_df.rename(columns={"MID_x": "MID"}, inplace=True)
 
-
-# 5. Only select rows that are used for analysis (Final selection != 0)
-merged_df = merged_df[merged_df["Final selection"] != 0]
-
-# 6. Create Location_US column programmatically
+# 5. Create Location_US column programmatically
 merged_df["Location_US"] = merged_df["Location? Where the study is based"].apply(
     lambda x: "US" if re.fullmatch(r'(US|USA)', str(x), re.IGNORECASE) else "Other"
 )
 
-# 7. Select columns used in R analysis
+# 6. Select columns used in R analysis
 merged_df = merged_df[
     [
         "Study",
@@ -169,7 +163,7 @@ merged_df = merged_df[
     ]
 ]
 
-# 8. Remove 'NR' from some columns (np.nan is NR in R analysis)
+# 7. Remove 'NR' from some columns (np.nan is NR in R analysis)
 merged_df['Mean_age'] = merged_df['Mean_age'].apply(
     lambda x: np.nan if isinstance(x, str) and 'NR' in x.upper() else x
 )
@@ -194,7 +188,7 @@ merged_df['Percentage_women'] = merged_df['Percentage_women'].apply(
     lambda x: np.nan if isinstance(x, str) and 'NR' in x.upper() else x
 )
 
-# 9. Convert numerical columns to the correct datatype (int or float)
+# 8. Convert numerical columns to the correct datatype (int or float)
 merged_df["Mean_age"] = merged_df["Mean_age"].astype("float")
 merged_df["Percentage_women"] = merged_df["Percentage_women"].astype("float")
 merged_df["Percentage_minority"] = merged_df["Percentage_minority"].astype("float")
@@ -233,5 +227,5 @@ merged_df["Relabeling"] = merged_df["Relabeling"].round().astype("Int64")
 merged_df["Worsened_improved"] = merged_df["Worsened_improved"].round().astype("Int64")
 merged_df["TP_assessments"] = merged_df["TP_assessments"].round().astype("Int64")
 
-# 10. Save to file
+# 9. Save to file
 merged_df.to_csv("./output/data_for_moderation_analyses.csv", index=False, sep=';')
