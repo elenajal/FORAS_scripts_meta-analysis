@@ -1,6 +1,6 @@
-# Codebook: Relative Prevalence of PTSD Symptom Trajectories
+# Codebook: Data Analysis File
 
-This Codebook describes the meaning of the column names in the file "data_for_moderation_analyses.csv" used for the analysis of the Relative Prevalences of PTSD Symptom Trajectories paper.
+This Codebook describes the meaning of the column names in the file "data_for_moderation_analyses.csv" used for the meta-analysis of the Relative Prevalences of PTSD Symptom Trajectories (Pre-print: https://doi.org/10.31219/osf.io/fkjb2_v1).
 
 | Column Title(s) | Meaning |
 |---|---|
