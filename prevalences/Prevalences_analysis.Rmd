@@ -1598,8 +1598,11 @@ gt_all <- purrr::reduce(
 
 gt_all
 
-
+# Export (same object, already formatted)
+gt::gtsave(gt_all, "prevalences-sensitivity-table.rtf")
+gt::gtsave(gt_all, "prevalences-sensitivity-table.png", vwidth = 700) 
 ```
 ------------------------------------------------------------------------
+
 
 
