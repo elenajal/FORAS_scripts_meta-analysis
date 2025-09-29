@@ -1330,7 +1330,7 @@ final_summary <- data.frame(
 knitr::kable(final_summary, caption = "Moderate  Trajectory Estimate from glmer Model")
 ```
 # Tables for Paper
-## Prevalences Summary Table (Table 1)
+## Prevalences Summary Table
 ```{r prevalences-summary-table}
 # Trajectory order & fitted models
 traj_order <- c("Low","Decreasing","Increasing","High","Moderate")
@@ -1418,5 +1418,6 @@ table1_df |>
   )
 ```
 ------------------------------------------------------------------------
+
 
 
