@@ -1425,8 +1425,13 @@ tbl1 <- table1_df |>
   )
 
 print(tbl1)
+
+# Also export a Word-friendly file alongside the HTML
+gt::gtsave(tbl1, "prevalences-summary-table.png", vwidth = 700)
+gt::gtsave(tbl1, "prevalences-summary-table.rtf")
 ```
 ------------------------------------------------------------------------
+
 
 
 
