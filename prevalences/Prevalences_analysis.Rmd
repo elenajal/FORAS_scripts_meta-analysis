@@ -1504,24 +1504,31 @@ gt_all <-
   ) |>
   cols_label(
     Analysis = "Analysis",
-    k = html("k"),
+    k = html("<em>k</em>"),
     `Relative Prevalence (95% CI)` = "Relative Prevalence (95% CI)",
     `Logit Estimate` = "Logit Estimate",
-    tau2 = html("&tau;<sup>2</sup>")
+    tau2 = html("<em>&tau;<sup>2</sup></em>")
   ) |>
   fmt_number(columns = c(`Logit Estimate`, tau2), decimals = 2) |>
   cols_align(align = "left", columns = Analysis) |>
   cols_align(align = "center", columns = c(k, `Relative Prevalence (95% CI)`, `Logit Estimate`, tau2)) |>
   opt_row_striping() |>
   tab_options(
-    table.font.names = c("Source Sans Pro", "Inter", "Helvetica", "Arial", "sans-serif"),
+    table.font.names = c("Times New Roman", "Times", "serif"),  # <- TNR in HTML + RTF
     data_row.padding = px(6),
     column_labels.font.weight = "bold",
-    row_group.as_column = FALSE
+    row_group.as_column = FALSE,
+    table.font.size = px(13)
+  ) |>
+  # smaller notes/footnotes
+  tab_style(
+    style = cell_text(size = px(11), font = "Times New Roman"),
+    locations = list(cells_source_notes(), cells_footnotes())
   ) |>
   tab_source_note(md(
-    "Note. Logit estimate is on the log-odds scale; &tau;<sup>2</sup> indicates between-study heterogeneity; values > 0.50 suggest substantial heterogeneity."
+    "<em>Note.</em> <em>k</em> represents the number of unique samples. Logit estimate reflects pooled prevalence on a log-odds scale. <em>&tau;<sup>2</sup></em> indicates between-study heterogeneity; values &gt; 0.50 suggest substantial heterogeneity."
   ))
+
 
 # ---- 6) Auto-notes using Study (already "Author, Year") ----
 
@@ -1594,4 +1601,5 @@ gt_all
 
 ```
 ------------------------------------------------------------------------
+
 
