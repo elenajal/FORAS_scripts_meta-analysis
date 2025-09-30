@@ -1,6 +1,5 @@
 ---
 title: "Generalized Linear Mixed Models for Moderator Analyses"
-author: "Coimbra, van der Kuil, van de Schoot"
 date: "2025-07-20"
 output:
   html_document:
@@ -2119,5 +2118,4 @@ summary(model)
 plogis(fixef(model)["(Intercept)"])  # Yes (reference)
 plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Health_First)No"])
 ```
-
 ---
