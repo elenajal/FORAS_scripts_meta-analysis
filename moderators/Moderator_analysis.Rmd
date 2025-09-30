@@ -2118,6 +2118,4 @@ summary(model)
 plogis(fixef(model)["(Intercept)"])  # Yes (reference)
 plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Health_First)No"])
 ```
-
-
 ---
