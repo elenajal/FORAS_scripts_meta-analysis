@@ -1331,7 +1331,7 @@ final_summary <- data.frame(
 knitr::kable(final_summary, caption = "Moderate  Trajectory Estimate from glmer Model")
 ```
 # Tables for Paper
-## Prevalences Summary Table (Table 1)
+## Prevalences Summary Table
 ```{r prevalences-summary-table}
 # Trajectory order & fitted models
 traj_order <- c("Low","Decreasing","Increasing","High","Moderate")
@@ -1385,20 +1385,16 @@ row_from <- function(name, fit) {
 table1_df <- bind_rows(lapply(traj_order, function(nm) row_from(nm, fits[[nm]])))
 
 # Render table
-table1_df |>
+tbl1 <- table1_df |>
   gt() |>
   cols_label(
     trajectory = "PTSD Symptom Trajectory",
     rel_prev   = "Relative Prevalence",
-    ci_95      = "95%(CI)",
-    k          = "k",
+    ci_95      = "95% (CI)",
+    k          = html("<em>k</em>"),
     N_pct      = "N (%)",
     logit      = "Logit Estimate",
-    tau2       = html("&tau;<sup>2</sup>")
-  ) |>
-  tab_header(
-    title    = md("**Table 1**"),
-    subtitle = md("Relative Prevalence of PTSD Symptom Trajectories")
+    tau2       = html("<em>&tau;<sup>2</sup></em>")
   ) |>
   cols_align("left",   columns = trajectory) |>
   cols_align("center", columns = c(rel_prev, ci_95, k, N_pct, logit, tau2)) |>
@@ -1406,17 +1402,34 @@ table1_df |>
   fmt_number(columns = c(logit, tau2), decimals = 2) |>
   opt_row_striping() |>
   tab_style(
-    style = cell_text(weight = "bold"),
-    locations = cells_column_labels(everything())
+    style = cell_text(size = px(11), font = "Times New Roman"),
+    locations = cells_source_notes()
   ) |>
   tab_options(
     table.width = pct(100),
     data_row.padding = px(6),
-    table.font.size = px(13)
+    table.font.size = px(13),
+    table.font.names = "Times New Roman"
   ) |>
   tab_source_note(
-    source_note = html("<em>Note.</em> k represents the number of unique studies. Logit estimate reflects pooled prevalence on a log-odds scale. &tau;<sup>2</sup> indicates between-study heterogeneity; values &gt; 0.50 suggest substantial heterogeneity.")
+    source_note = html("<em>Note.</em> <em>k</em> represents the number of unique samples. Logit estimate reflects pooled prevalence on a log-odds scale. <em>&tau;<sup>2</sup></em> indicates between-study heterogeneity; values &gt; 0.50 suggest substantial heterogeneity.")
+  ) |>
+  tab_style(
+    style = cell_text(size = px(11)),       
+    locations = cells_source_notes()
+  ) |>
+  opt_table_font(
+    font = list(
+      google_font("Times New Roman"),
+      default_fonts()     
+    )
   )
+
+print(tbl1)
+
+# Also export a Word-friendly file alongside the HTML
+gt::gtsave(tbl1, "prevalences-summary-table.png", vwidth = 700)
+gt::gtsave(tbl1, "prevalences-summary-table.rtf")
 ```
 
 
@@ -1602,5 +1615,3 @@ gt::gtsave(gt_all, "prevalences-sensitivity-table.rtf")
 gt::gtsave(gt_all, "prevalences-sensitivity-table.png", vwidth = 700) 
 ```
 ------------------------------------------------------------------------
-
-
