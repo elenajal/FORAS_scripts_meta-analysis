@@ -1534,7 +1534,7 @@ gt_all <-
 
 
 # Auto-notes for excluded influential papers using Study variable ("Author, Year")
-.get_model_data <- function(fit) {
+.get_model_data <- function(fit) { # recovers the original data frame used to fit a model
   d <- tryCatch({
     cd <- fit$call$data
     if (is.symbol(cd)) get(as.character(cd), envir = .GlobalEnv)
@@ -1544,11 +1544,11 @@ gt_all <-
   if (is.null(d)) tryCatch(model.frame(fit), error = function(e) NULL) else d
 }
 
-.used_rows <- function(fit, n_df) {
+.used_rows <- function(fit, n_df) { # Figures out which rows of the original data were kept when the model was fit.
   if (!is.null(fit$not.na) && length(fit$not.na) == n_df) which(fit$not.na) else seq_len(n_df)
 }
 
-.labels_from_study <- function(fit) {
+.labels_from_study <- function(fit) { # Gets the model’s data via .get_model_data(fit) and uses .used_rows() to take only rows actually used in the fit.
   df <- .get_model_data(fit)
   if (is.null(df)) return(character(0))
   nm <- if ("Study" %in% names(df)) "Study" else if ("study" %in% names(df)) "study" else stop("Column 'Study' not found.")
@@ -1556,7 +1556,7 @@ gt_all <-
   as.character(df[[nm]])[idx]
 }
 
-.excluded_study_labels <- function(traj_stub) {
+.excluded_study_labels <- function(traj_stub) { # Gets trimmed study labels frommain model and noinf model using .labels_from_study()
   main_fit  <- tryCatch(get(paste0("glmm_", traj_stub), envir = .GlobalEnv), error = function(e) NULL)
   noinf_fit <- tryCatch(get(paste0("glmm_", traj_stub, "_noinf"), envir = .GlobalEnv), error = function(e) NULL)
   if (is.null(main_fit)) return(character(0))
@@ -1574,11 +1574,13 @@ format_note <- function(vec) {
   else paste0("Excluded influential studies: ", paste(vec, collapse = "; "))
 }
 
-# Build notes per displayed group label
+# Build notes per displayed group label:
+# Name the resulting list with the display labels from trajectory_map
 excluded_by_group <- setNames(
   lapply(names(trajectory_map), .excluded_study_labels),
   nm = unname(trajectory_map[names(trajectory_map)])
 )
+# apply format_note()
 excluded_notes <- lapply(excluded_by_group, format_note)
 
 # Attach footnote to the “Excluding influential studies” row within each group
@@ -1599,11 +1601,12 @@ gt_all <- purrr::reduce(
 
 gt_all
 
-# Export (same object, already formatted)
+# Export to rtf and png to use in paper
 gt::gtsave(gt_all, "prevalences-sensitivity-table.rtf")
 gt::gtsave(gt_all, "prevalences-sensitivity-table.png", vwidth = 700) 
 ```
 ------------------------------------------------------------------------
+
 
 
 
