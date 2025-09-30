@@ -1332,9 +1332,9 @@ final_summary <- data.frame(
 knitr::kable(final_summary, caption = "Moderate  Trajectory Estimate from glmer Model")
 ```
 # Tables for Paper
-## Prevalences Summary Table (Table 1)
+## Prevalences Summary Table
 ```{r prevalences-summary-table}
-# Trajectory order & fitted models
+# Set trajectory order & define fitted models
 traj_order <- c("Low","Decreasing","Increasing","High","Moderate")
 
 fits <- list(
@@ -1345,6 +1345,7 @@ fits <- list(
   Moderate   = glmm_Moderate
 )
 
+# define number of people per trajectory with percentage
 trajectory_counts <- tibble(
   trajectory = factor(traj_order, levels = traj_order),
   N = c(
@@ -1357,6 +1358,7 @@ trajectory_counts <- tibble(
 ) |>
   mutate(pct = round(100 * N / sum(N), 1))
 
+# define k (unique samples) per trajectory
 k_vec <- c(
   Low        = as.integer(unique_Low_studies),
   Decreasing = as.integer(unique_Decreasing_studies),
@@ -1370,16 +1372,16 @@ row_from <- function(name, fit) {
   pr <- predict(fit, transf = transf.ilogit)
   tibble(
     trajectory = name,
-    rel_prev   = sprintf("%.1f%%", pr$pred * 100),
-    ci_95      = sprintf("%.1f to %.1f%%", pr$ci.lb * 100, pr$ci.ub * 100),
-    k          = k_vec[[name]],
+    rel_prev   = sprintf("%.1f%%", pr$pred * 100), # Relative Prevalence Column
+    ci_95      = sprintf("%.1f to %.1f%%", pr$ci.lb * 100, pr$ci.ub * 100), # 95% Confidence Interval
+    k          = k_vec[[name]], # unique studies
     N_pct      = sprintf(
                    "%s (%.1f%%)",
                    format(trajectory_counts$N[trajectory_counts$trajectory == name], big.mark = ","),
                    trajectory_counts$pct[trajectory_counts$trajectory == name]
-                 ),
-    logit      = round(unname(coef(fit)[1]), 2),
-    tau2       = round(as.numeric(fit$tau2), 2)
+                 ), # number of people in trajectory & % of total number of people
+    logit      = round(unname(coef(fit)[1]), 2), # logit estimate
+    tau2       = round(as.numeric(fit$tau2), 2) # between-study heterogeneity
   )
 }
 
@@ -1603,6 +1605,7 @@ gt::gtsave(gt_all, "prevalences-sensitivity-table.rtf")
 gt::gtsave(gt_all, "prevalences-sensitivity-table.png", vwidth = 700) 
 ```
 ------------------------------------------------------------------------
+
 
 
 
