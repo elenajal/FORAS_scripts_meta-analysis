@@ -1424,7 +1424,7 @@ table1_df |>
 ## Sensitivity Analyses Summary
 
 ```{r sensitivity-summary-table}
-# ---- helper: one rma.glmm -> 1 row (no changes) ----
+# build one row per trajectory from the GLMM fit
 mk_row <- function(fit, label) {
   prev  <- plogis(as.numeric(coef(fit)))
   ci_lb <- plogis(as.numeric(fit$ci.lb))
@@ -1439,7 +1439,7 @@ mk_row <- function(fit, label) {
   )
 }
 
-# ---- 1. DEFINE components ----
+# define components of the table (trajectory names & analysis names)
 trajectory_map <- c(
   "Low"        = "Low symptoms",
   "Decreasing" = "Decreasing symptoms",
@@ -1455,22 +1455,25 @@ analysis_map <- c(
   "noinf" = "Excluding influential studies"
 )
 
-# ---- 2. BUILD the table of specifications programmatically ----
+# Build a spec table combining every trajectory with every analysis 
 all_specs <- crossing(
   trajectory_stub = names(trajectory_map),
   analysis_stub   = names(analysis_map)
 ) |>
-  mutate(
+# Add derived columns to the Cartesian product above  
+mutate(
     object_name = if_else(
       analysis_stub == "Main",
       paste0("glmm_", trajectory_stub),
       paste0("glmm_", trajectory_stub, "_", analysis_stub)
     ),
+    # Look up human-readable trajectory and analysis label by name.
+    # indexing by _stub returns the corresponding value.
     Trajectory = trajectory_map[trajectory_stub],
     Analysis   = analysis_map[analysis_stub]
   )
 
-# ---- 3. EXECUTE: Iterate over specs to build the final table ----
+# build the table
 big_tbl <- pmap_dfr(
   all_specs,
   function(object_name, Trajectory, Analysis, ...) {
@@ -1482,7 +1485,7 @@ big_tbl <- pmap_dfr(
   }
 )
 
-# ---- 4. PREPARE for gt: Enforce group order ----
+# enfore trajectory order
 trajectory_order <- c(
   "Low symptoms",
   "Decreasing symptoms",
@@ -1495,12 +1498,12 @@ big_tbl_ordered <- big_tbl |>
   mutate(Trajectory = factor(Trajectory, levels = trajectory_order)) |>
   arrange(Trajectory)
 
-# ---- 5. CREATE the gt table with final formatting ----
+# create gt table
 gt_all <-
   gt(big_tbl_ordered, groupname_col = "Trajectory") |>
   tab_style(
     style = cell_text(weight = "bold"),
-    locations = cells_row_groups()
+    locations = cells_row_groups() # group analyses by trajectory
   ) |>
   cols_label(
     Analysis = "Analysis",
@@ -1514,7 +1517,7 @@ gt_all <-
   cols_align(align = "center", columns = c(k, `Relative Prevalence (95% CI)`, `Logit Estimate`, tau2)) |>
   opt_row_striping() |>
   tab_options(
-    table.font.names = c("Times New Roman", "Times", "serif"),  # <- TNR in HTML + RTF
+    table.font.names = c("Times New Roman", "Times", "serif"),  # force times new roman font in outputs
     data_row.padding = px(6),
     column_labels.font.weight = "bold",
     row_group.as_column = FALSE,
@@ -1530,9 +1533,7 @@ gt_all <-
   ))
 
 
-# ---- 6) Auto-notes using Study (already "Author, Year") ----
-
-# Minimal helpers
+# Auto-notes for excluded influential papers using Study variable ("Author, Year")
 .get_model_data <- function(fit) {
   d <- tryCatch({
     cd <- fit$call$data
@@ -1603,6 +1604,7 @@ gt::gtsave(gt_all, "prevalences-sensitivity-table.rtf")
 gt::gtsave(gt_all, "prevalences-sensitivity-table.png", vwidth = 700) 
 ```
 ------------------------------------------------------------------------
+
 
 
 
