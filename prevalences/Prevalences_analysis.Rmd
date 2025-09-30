@@ -1331,8 +1331,11 @@ final_summary <- data.frame(
 
 knitr::kable(final_summary, caption = "Moderate  Trajectory Estimate from glmer Model")
 ```
+
 # Tables for Paper
+
 ## Prevalences Summary Table
+
 ```{r prevalences-summary-table}
 # Set trajectory order & define fitted models
 traj_order <- c("Low","Decreasing","Increasing","High","Moderate")
@@ -1604,6 +1607,7 @@ gt::gtsave(gt_all, "prevalences-sensitivity-table.rtf")
 gt::gtsave(gt_all, "prevalences-sensitivity-table.png", vwidth = 700) 
 ```
 ------------------------------------------------------------------------
+
 
 
 
