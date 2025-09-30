@@ -1422,7 +1422,6 @@ table1_df |>
   )
 ```
 
-
 ## Sensitivity Analyses Summary
 
 ```{r sensitivity-summary-table}
@@ -1605,6 +1604,7 @@ gt::gtsave(gt_all, "prevalences-sensitivity-table.rtf")
 gt::gtsave(gt_all, "prevalences-sensitivity-table.png", vwidth = 700) 
 ```
 ------------------------------------------------------------------------
+
 
 
 
