@@ -434,7 +434,7 @@ est_glmer_Decreasing <- fixef(model_glmer_Decreasing)["(Intercept)"]
 se_glmer_Decreasing <- sqrt(vcov(model_glmer_Decreasing)["(Intercept)", "(Intercept)"])
 
 # Compute 95% CI (logit scale)
-ci_Decreasinger_glmer_Decreasing <- est_glmer_Decreasing - 1.96 * se_glmer_Decreasing
+ci_Lower_glmer_Decreasing <- est_glmer_Decreasing - 1.96 * se_glmer_Decreasing
 ci_upper_glmer_Decreasing <- est_glmer_Decreasing + 1.96 * se_glmer_Decreasing
 
 n_glmer_studies_Decreasing <- length(ranef(model_glmer_Decreasing)$Study[[1]])
@@ -443,7 +443,7 @@ n_glmer_studies_Decreasing <- length(ranef(model_glmer_Decreasing)$Study[[1]])
 glmer_summary_Decreasing <- data.frame(
   Model = "glmer (binomial, random intercept)",
   Pooled_Prevalence = round(plogis(est_glmer_Decreasing), 3),
-  CI_Decreasinger = round(plogis(ci_Decreasinger_glmer_Decreasing), 3),
+  ci_Lower = round(plogis(ci_Lower_glmer_Decreasing), 3),
   CI_Upper = round(plogis(ci_upper_glmer_Decreasing), 3), 
   Studies_included = n_glmer_studies_Decreasing
 )
@@ -590,7 +590,7 @@ est_glmer_Increasing <- fixef(model_glmer_Increasing)["(Intercept)"]
 se_glmer_Increasing <- sqrt(vcov(model_glmer_Increasing)["(Intercept)", "(Intercept)"])
 
 # Compute 95% CI (logit scale)
-ci_Increasinger_glmer_Increasing <- est_glmer_Increasing - 1.96 * se_glmer_Increasing
+ci_Lower_glmer_Increasing <- est_glmer_Increasing - 1.96 * se_glmer_Increasing
 ci_upper_glmer_Increasing <- est_glmer_Increasing + 1.96 * se_glmer_Increasing
 
 n_glmer_studies_Increasing <- length(ranef(model_glmer_Increasing)$Study[[1]])
@@ -599,7 +599,7 @@ n_glmer_studies_Increasing <- length(ranef(model_glmer_Increasing)$Study[[1]])
 glmer_summary_Increasing <- data.frame(
   Model = "glmer (binomial, random intercept)",
   Pooled_Prevalence = round(plogis(est_glmer_Increasing), 3),
-  CI_Increasinger = round(plogis(ci_Increasinger_glmer_Increasing), 3),
+  ci_Lower = round(plogis(ci_Lower_glmer_Increasing), 3),
   CI_Upper = round(plogis(ci_upper_glmer_Increasing), 3), 
   Studies_included = n_glmer_studies_Increasing
 )
@@ -747,7 +747,7 @@ est_glmer_High <- fixef(model_glmer_High)["(Intercept)"]
 se_glmer_High <- sqrt(vcov(model_glmer_High)["(Intercept)", "(Intercept)"])
 
 # Compute 95% CI (logit scale)
-ci_Higher_glmer_High <- est_glmer_High - 1.96 * se_glmer_High
+ci_Lower_glmer_High <- est_glmer_High - 1.96 * se_glmer_High
 ci_upper_glmer_High <- est_glmer_High + 1.96 * se_glmer_High
 
 n_glmer_studies_High <- length(ranef(model_glmer_High)$Study[[1]])
@@ -756,7 +756,7 @@ n_glmer_studies_High <- length(ranef(model_glmer_High)$Study[[1]])
 glmer_summary_High <- data.frame(
   Model = "glmer (binomial, random intercept)",
   Pooled_Prevalence = round(plogis(est_glmer_High), 3),
-  CI_Higher = round(plogis(ci_Higher_glmer_High), 3),
+  ci_Lower = round(plogis(ci_Lower_glmer_High), 3),
   CI_Upper = round(plogis(ci_upper_glmer_High), 3), 
   Studies_included = n_glmer_studies_High
 )
@@ -902,7 +902,7 @@ est_glmer_Moderate <- fixef(model_glmer_Moderate)["(Intercept)"]
 se_glmer_Moderate <- sqrt(vcov(model_glmer_Moderate)["(Intercept)", "(Intercept)"])
 
 # Compute 95% CI (logit scale)
-ci_Moderateer_glmer_Moderate <- est_glmer_Moderate - 1.96 * se_glmer_Moderate
+ci_Lower_glmer_Moderate <- est_glmer_Moderate - 1.96 * se_glmer_Moderate
 ci_upper_glmer_Moderate <- est_glmer_Moderate + 1.96 * se_glmer_Moderate
 
 n_glmer_studies_Moderate <- length(ranef(model_glmer_Moderate)$Study[[1]])
@@ -911,7 +911,7 @@ n_glmer_studies_Moderate <- length(ranef(model_glmer_Moderate)$Study[[1]])
 glmer_summary_Moderate <- data.frame(
   Model = "glmer (binomial, random intercept)",
   Pooled_Prevalence = round(plogis(est_glmer_Moderate), 3),
-  CI_Moderateer = round(plogis(ci_Moderateer_glmer_Moderate), 3),
+  ci_Lower = round(plogis(ci_Lower_glmer_Moderate), 3),
   CI_Upper = round(plogis(ci_upper_glmer_Moderate), 3), 
   Studies_included = n_glmer_studies_Moderate
 )
@@ -1198,6 +1198,7 @@ gt::gtsave(gt_all, "prevalences-sensitivity-table.rtf")
 gt::gtsave(gt_all, "prevalences-sensitivity-table.png", vwidth = 700)
 
 ```
+
 
 
 
