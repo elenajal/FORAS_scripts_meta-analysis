@@ -1334,6 +1334,36 @@ knitr::kable(final_summary, caption = "Moderate  Trajectory Estimate from glmer 
 ```
 
 # Tables for Paper
+
+## Descriptives Table Export
+
+```{r big-descriptives-table}
+# Export to word
+overview_fmt <- overview %>%
+  mutate(
+    `Sample Size`       = format(`Sample Size`, big.mark = ",", trim = TRUE),
+    `Mean Age`          = ifelse(is.na(`Mean Age`), NA, sprintf("%.1f", `Mean Age`)),
+    `Percentage Women`  = ifelse(is.na(`Percentage Women`), NA, sprintf("%.1f%%", `Percentage Women`))
+  )
+
+ft <- flextable::flextable(overview_fmt) |> 
+  flextable::align(j = c("Sample Size","Mean Age","Percentage Women","Number of TP assessments","Number of Trajectories Found"), align = "right", part = "all") |> 
+  flextable::align(j = c("Author(s), Year_SampleName","Assessed Trauma Type"), align = "left", part = "all") |> 
+  flextable::bold(part = "header", bold = TRUE) |> flextable::fontsize(part = "all", size = 8) |> 
+  flextable::font(part = "all", fontname = "Times New Roman") |> 
+  flextable::border_outer(part = "all", border = officer::fp_border(color = "black", width = 1)) |> 
+  flextable::border_inner_h(border = officer::fp_border(color = "transparent", width = 0), part = "all") |> 
+  flextable::border_inner_v(border = officer::fp_border(color = "transparent", width = 0), part = "all") |> 
+  flextable::border(i = 1, border.bottom = officer::fp_border(color = "black", width = 1), part = "header") |> 
+  flextable::autofit()
+
+# docx export
+flextable::save_as_docx("Table 1" = ft, path = "Descriptives_Table.docx", pr_section = officer::prop_section(
+    page_size   = officer::page_size(orient = "landscape")
+  )
+)
+```
+
 ## Prevalences Summary Table
 
 ```{r prevalences-summary-table}
@@ -1623,6 +1653,7 @@ gt::gtsave(gt_all, "prevalences-sensitivity-table.rtf")
 gt::gtsave(gt_all, "prevalences-sensitivity-table.png", vwidth = 700) 
 
 ```
+
 
 
 
