@@ -771,73 +771,40 @@ We estimate the pooled prevalence of the Moderate trajectory using a Generalized
 ### Descriptives
 
 ```{r moderate-descriptives}
-
-# Copy the data
-df_moderate <- df_moderation
-
+# Copy the dataset to avoid overwriting the original
+df_Moderate <- df_moderation
 
 # Ensure Moderate_percentage is numeric
-df_moderate$Moderate_percentage <- as.numeric(df_moderate$Moderate_percentage)
-
-# Calculate Moderate_n
-df_moderate$Moderate_n <- round((df_moderate$Moderate_percentage / 100) * df_moderate$Sample_Size)
-
-total_Moderate_n <- sum(df_moderate$Moderate_n, na.rm = TRUE)
-
-# Number of unique samples with Moderate data
-
-unique_Moderate_studies <- length(unique(df_moderate$Study[!is.na(df_moderate$Moderate_percentage)]))
-
-# Total number of individuals classified as Moderate
+df_Moderate$Moderate_percentage <- as.numeric(df_Moderate$Moderate_percentage)
 
 
-Moderate_info <- data.frame(
-  Description = c("Total number of individuals in Moderate trajectory", "Number of unique studies with Moderate data"),
+# Calculate Moderate_n as (percentage / 100) * sample size
+df_Moderate$Moderate_n <- round((df_Moderate$Moderate_percentage / 100) * df_Moderate$Sample_Size)
+
+# Total number of individuals classified as Moderate (ignoring missingness in other variables)
+total_Moderate_n <- sum(df_Moderate$Moderate_n, na.rm = TRUE)
+
+# Number of unique samples (assumes a column Study exists)
+unique_Moderate_studies <- length(unique(df_Moderate$Study[!is.na(df_Moderate$Moderate_percentage)]))
+
+# Display as a table
+additional_info <- data.frame(
+  Description = c("Total number of individuals in Moderate trajectory", "Number of unique studies"),
   Value = format(c(total_Moderate_n, unique_Moderate_studies), big.mark = ",")
 )
 
-knitr::kable(Moderate_info, caption = "Descriptive Statistics for Moderate Trajectory")
+knitr::kable(additional_info, caption = "Additional Descriptives for Moderate Trajectory Analysis")
 ```
 
 ### Generic GLMM
 
 ```{r moderate-glmm}
-
-
-
-# Apply continuity correction for 0% and 100%
-extreme_Moderate <- which(!is.na(df_moderate$Moderate_n) &
-                           !is.na(df_moderate$Sample_Size) &
-                           (df_moderate$Moderate_n == 0 | df_moderate$Moderate_n == df_moderate$Sample_Size))
-
-df_moderate$Moderate_n[extreme_Moderate] <- df_moderate$Moderate_n[extreme_Moderate] + 0.5
-df_moderate$Sample_Size[extreme_Moderate] <- df_moderate$Sample_Size[extreme_Moderate] + 1
-
-# Prevent xi > ni by enforcing xi <= ni - 0.5
-df_moderate$Moderate_n <- pmin(df_moderate$Moderate_n, df_moderate$Sample_Size - 0.5)
-
-
 # Fit GLMM
-glmm_Moderate <- rma.glmm(measure = "PLO",
-                           xi = df_moderate$Moderate_n,
-                           ni = df_moderate$Sample_Size,
-                           data = df_moderate)
+glmm_Moderate <- fit_glmm_prev(df_Moderate, event_col = "Moderate_n", n_col = "Sample_Size",
+                             label = "Main Analysis")
 
-# Extract estimates
-Moderate_prev <- plogis(coef(glmm_Moderate))
-Moderate_ci_lower <- plogis(glmm_Moderate$ci.lb)
-Moderate_ci_upper <- plogis(glmm_Moderate$ci.ub)
-
-# Create summary table
-Moderate_summary <- data.frame(
-  Trajectory = "Moderate",
-  Pooled_Prevalence = round(Moderate_prev, 3),
-  CI_Lower = round(Moderate_ci_lower, 3),
-  CI_Upper = round(Moderate_ci_upper, 3),
-  Studies_included = glmm_Moderate$k
-)
-
-knitr::kable(Moderate_summary, caption = "Pooled Prevalence Estimate for Moderate  Trajectory (GLMM)")
+# Display result
+knitr::kable(glmm_Moderate, caption = "Pooled Prevalence Estimate for Moderate Trajectory (GLMM)")
 ```
 
 ### Sensitivity Analysis 1
@@ -845,25 +812,16 @@ knitr::kable(Moderate_summary, caption = "Pooled Prevalence Estimate for Moderat
 Exclude Samples with ≥90% Prevalence
 
 ```{r moderate-sens1}
-df_moderate$Moderate_Proportion <- df_moderate$Moderate_n / df_moderate$Sample_Size
+# Subset: Exclude samples with Moderate trajectory ≥90% of the sample
+df_Moderate_sens1 <- subset(df_Moderate,
+                   !is.na(Moderate_n) & !is.na(Sample_Size) &
+                   !is.na(Moderate_percentage) & Moderate_percentage < 90)
 
-df_moderate_sens1 <- df_moderate %>%
-  filter(Moderate_Proportion < 0.90)
+# Fit GLMM
+glmm_Moderate_sens1 <-  fit_glmm_prev(df_Moderate_sens1, "Moderate_n", "Sample_Size", "Sensitivity 1: Exclude ≥90% Moderate")
 
-glmm_Moderate_sens1 <- rma.glmm(measure = "PLO",
-                                 xi = Moderate_n,
-                                 ni = Sample_Size,
-                                 data = df_moderate_sens1)
-
-sens1_summary <- data.frame(
-  Analysis = "Sensitivity 1: Exclude ≥90% Moderate ",
-  Pooled_Prevalence = round(plogis(coef(glmm_Moderate_sens1)), 3),
-  CI_Lower = round(plogis(glmm_Moderate_sens1$ci.lb), 3),
-  CI_Upper = round(plogis(glmm_Moderate_sens1$ci.ub), 3),
-  Studies_included = glmm_Moderate_sens1$k
-)
-
-knitr::kable(sens1_summary, caption = "Sensitivity Analysis 1: Moderate  Trajectory (Excl. ≥90%)")
+# Display table
+knitr::kable(glmm_Moderate_sens1, caption = "Sensitivity Analysis 1: Moderate Trajectory (Excl. ≥90% Prevalence)")
 ```
 
 ### Sensitivity Analysis 2
@@ -871,23 +829,16 @@ knitr::kable(sens1_summary, caption = "Sensitivity Analysis 1: Moderate  Traject
 Only Large Samples (N \> 999)
 
 ```{r moderate-sens2}
-df_moderate_sens2 <- df_moderate %>%
-  filter(Sample_Size > 999)
+# Subset: Include only samples with Sample_Size > 999
+df_Moderate_sens2 <- subset(df_Moderate,
+                   !is.na(Moderate_n) & !is.na(Sample_Size) &
+                   Sample_Size > 999)
 
-glmm_Moderate_sens2 <- rma.glmm(measure = "PLO",
-                                 xi = Moderate_n,
-                                 ni = Sample_Size,
-                                 data = df_moderate_sens2)
+# Fit GLMM
+glmm_Moderate_sens2 <- fit_glmm_prev(df_Moderate_sens2, "Moderate_n", "Sample_Size", "Sensitivity 2: N > 999")
 
-sens2_summary <- data.frame(
-  Analysis = "Sensitivity 2: N > 999",
-  Pooled_Prevalence = round(plogis(coef(glmm_Moderate_sens2)), 3),
-  CI_Lower = round(plogis(glmm_Moderate_sens2$ci.lb), 3),
-  CI_Upper = round(plogis(glmm_Moderate_sens2$ci.ub), 3),
-  Studies_included = glmm_Moderate_sens2$k
-)
-
-knitr::kable(sens2_summary, caption = "Sensitivity Analysis 2: Moderate  Trajectory (Samples >999)")
+# Display table
+knitr::kable(glmm_Moderate_sens2, caption = "Sensitivity Analysis 2: Moderate Trajectory (Samples > 999)")
 ```
 
 ### Sensitivity Analysis 3
@@ -895,71 +846,77 @@ knitr::kable(sens2_summary, caption = "Sensitivity Analysis 2: Moderate  Traject
 Exclude Influential Studies
 
 ```{r moderate-influential}
+# Fit a GLMM with glmer (binomial model with random study effect)
 model_glmer_Moderate <- glmer(cbind(round(Moderate_n), Sample_Size - round(Moderate_n)) ~ 1 + (1 | Study),
-                               data = df_moderate, family = binomial)
+                     data = df_Moderate,
+                     family = binomial)
 
-infl_Moderate <- influence(model_glmer_Moderate, group = "Study")
-cooks_Moderate <- cooks.distance(infl_Moderate)
+# Run influence analysis by Studies
+infl <- influence(model_glmer_Moderate, group = "Study")
 
-threshold_Moderate <- 4 / length(cooks_Moderate)
+# Compute Cook's distance
+cooks <- cooks.distance(infl)
 
-plot(cooks_Moderate, type = "h", lwd = 2,
-     main = "Cook's Distance per Study (Moderate)",
+# Define rule-of-thumb threshold
+threshold <- 4 / length(cooks)
+
+# Plot Cook's distances
+p1 <- plot(cooks, type = "h", lwd = 2,
+     main = "Cook's Distance per Study",
      ylab = "Cook's Distance", xlab = "Study Index")
-abline(h = threshold_Moderate, col = "red", lty = 2)
+abline(h = threshold, col = "red", lty = 2)
 
-influential_idx <- which(cooks_Moderate > threshold_Moderate)
-influential_studies <- df_moderate$Study[influential_idx]
+# Identify studies above the threshold
+influential_indices <- which(cooks > threshold)
+influential_studies_Moderate <- unique(df_Moderate$Study[influential_indices])
 
+# Display studies
 influential_table <- data.frame(
-  Study_ID = influential_studies,
-  Cooks_Distance = round(cooks_Moderate[influential_idx], 3)
+  Study_ID = influential_studies_Moderate,
+  Cooks_Distance = round(cooks[influential_indices], 3)
 )
 
-knitr::kable(influential_table, caption = "Influential Studies in Moderate Trajectory (Cook's Distance)")
+knitr::kable(influential_table, caption = "Studies Identified as Influential (Cook's Distance)")
 ```
 
 Refit Model Excluding Influential Studies
 
 ```{r moderate-sens-infl}
-df_Moderate_noinf <- df_moderate %>% filter(!Study %in% influential_studies)
+# Exclude the influential studies
+df_Moderate_noinf <- df_Moderate %>%
+  filter(!Study %in% influential_studies_Moderate)
 
-glmm_Moderate_noinf <- rma.glmm(measure = "PLO",
-                       xi = Moderate_n,
-                       ni = Sample_Size,
-                       data = df_Moderate_noinf)
+# Refit GLMM (metafor version)
+glmm_Moderate_noinf <- fit_glmm_prev(df_Moderate_noinf, "Moderate_n", "Sample_Size",
+                           "Sensitivity 3: Excluding Influential Studies")
 
-sens_infl_summary <- data.frame(
-  Analysis = "Excluding Influential Studies",
-  Pooled_Prevalence = round(plogis(coef(glmm_Moderate_noinf)), 3),
-  CI_Lower = round(plogis(glmm_Moderate_noinf$ci.lb), 3),
-  CI_Upper = round(plogis(glmm_Moderate_noinf$ci.ub), 3),
-  Studies_included = glmm_Moderate_noinf$k
-)
-
-knitr::kable(sens_infl_summary, caption = "Sensitivity Analysis: Moderate Trajectory (Excluding Influential Studies)")
+# Display table
+knitr::kable(glmm_Moderate_noinf, caption = "Sensitivity Analysis 3: Moderate Trajectory (Excluding Influential Studies)")
 ```
 
 ### Use `glmer`estimate
 
 ```{r moderate-glmer-summary}
-est_glmer <- fixef(model_glmer_Moderate)["(Intercept)"]
-se_glmer <- sqrt(vcov(model_glmer_Moderate)["(Intercept)", "(Intercept)"])
+# Extract fixed effect estimate
+est_glmer_Moderate <- fixef(model_glmer_Moderate)["(Intercept)"]
+se_glmer_Moderate <- sqrt(vcov(model_glmer_Moderate)["(Intercept)", "(Intercept)"])
 
-ci_lower <- est_glmer - 1.96 * se_glmer
-ci_upper <- est_glmer + 1.96 * se_glmer
+# Compute 95% CI (logit scale)
+ci_Moderateer_glmer_Moderate <- est_glmer_Moderate - 1.96 * se_glmer_Moderate
+ci_upper_glmer_Moderate <- est_glmer_Moderate + 1.96 * se_glmer_Moderate
 
-n_glmer_studies <- length(ranef(model_glmer_Moderate)$Study[[1]])
+n_glmer_studies_Moderate <- length(ranef(model_glmer_Moderate)$Study[[1]])
 
-final_summary <- data.frame(
+# Run glmer
+glmer_summary_Moderate <- data.frame(
   Model = "glmer (binomial, random intercept)",
-  Pooled_Prevalence = round(plogis(est_glmer), 3),
-  CI_Lower = round(plogis(ci_lower), 3),
-  CI_Upper = round(plogis(ci_upper), 3),
-  Studies_included = n_glmer_studies
+  Pooled_Prevalence = round(plogis(est_glmer_Moderate), 3),
+  CI_Moderateer = round(plogis(ci_Moderateer_glmer_Moderate), 3),
+  CI_Upper = round(plogis(ci_upper_glmer_Moderate), 3), 
+  Studies_included = n_glmer_studies_Moderate
 )
 
-knitr::kable(final_summary, caption = "Moderate  Trajectory Estimate from glmer Model")
+knitr::kable(glmer_summary_Moderate, caption = "Moderate Trajectory Estimate from glmer Model")
 ```
 
 # Tables for Paper
@@ -1252,6 +1209,7 @@ gt::gtsave(gt_all, "prevalences-sensitivity-table.rtf")
 gt::gtsave(gt_all, "prevalences-sensitivity-table.png", vwidth = 700) 
 
 ```
+
 
 
 
