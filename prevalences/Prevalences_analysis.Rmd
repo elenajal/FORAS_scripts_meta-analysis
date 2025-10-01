@@ -53,7 +53,6 @@ head(df_moderation)
 We provide basic descriptive statistics of the included studies, without excluding any data due to missingness.
 
 ```{r descriptives}
-
 # Calculate descriptives
 total_number_of_samples <- nrow(df_moderation)
 total_sample_size <- sum(df_moderation$Sample_Size, na.rm = TRUE)
@@ -66,8 +65,8 @@ summary_table <- data.frame(
 
 # Display as a table
 knitr::kable(summary_table, caption = "Descriptive Statistics of the Dataset")
-
 ```
+
 ### Descriptives Tables for All Studies
 
 ```{r descriptives-studies-table}
@@ -100,6 +99,32 @@ if (knitr::is_html_output() || knitr::is_latex_output()) {
 }
 ```
 # Prevalences
+
+```{r portable-glmm-function}
+# Portable function for pooled prevalence via GLMM with continuity correction
+fit_glmm_prev <- function(df, event_col, n_col = "Sample_Size", label = event_col) {
+  xi <- suppressWarnings(as.numeric(df[[event_col]]))
+  ni <- suppressWarnings(as.numeric(df[[n_col]]))
+
+  extreme <- !is.na(xi) & !is.na(ni) & (xi == 0 | xi == ni)
+  xi[extreme] <- xi[extreme] + 0.5
+  ni[extreme] <- ni[extreme] + 1
+
+  fit <- metafor::rma.glmm(measure = "PLO", xi = xi, ni = ni, data = df)
+  pr  <- predict(fit, transf = metafor::transf.ilogit)
+
+  data.frame(
+    Trajectory        = label,
+    Pooled_Prevalence = as.numeric(pr$pred),
+    CI_Lower          = as.numeric(pr$ci.lb),
+    CI_Upper          = as.numeric(pr$ci.ub),
+    Samples_included  = fit$k,
+    Logit_Estimate    = unname(coef(fit)[1]),
+    τ2                = as.numeric(fit$tau2),
+    check.names = FALSE
+  )
+}
+```
 
 ## 🚀 Low Symptom Trajectory
 
@@ -1619,4 +1644,5 @@ gt_all
 # Export to rtf and png to use in paper
 gt::gtsave(gt_all, "prevalences-sensitivity-table.rtf")
 gt::gtsave(gt_all, "prevalences-sensitivity-table.png", vwidth = 700) 
+
 ```
