@@ -96,6 +96,8 @@ if (knitr::is_html_output() || knitr::is_latex_output()) {
     kableExtra::kable_styling(full_width = FALSE, position = "left",
                               bootstrap_options = c("striped", "hover", "condensed")) |>
     kableExtra::column_spec(1, bold = TRUE) |>
+    kableExtra::row_spec(0,  extra_css = "font-family: 'Times New Roman', Times, serif;") |>
+    kableExtra::row_spec(1:nrow(overview), extra_css = "font-family: 'Times New Roman', Times, serif;") |>
     kableExtra::scroll_box(height = "470px")
 }
 ```
@@ -1619,4 +1621,5 @@ gt_all
 # Export to rtf and png to use in paper
 gt::gtsave(gt_all, "prevalences-sensitivity-table.rtf")
 gt::gtsave(gt_all, "prevalences-sensitivity-table.png", vwidth = 700) 
+
 ```
