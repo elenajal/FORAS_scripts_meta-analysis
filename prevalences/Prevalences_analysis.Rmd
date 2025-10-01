@@ -114,13 +114,13 @@ fit_glmm_prev <- function(df, event_col, n_col = "Sample_Size", label = event_co
   pr  <- predict(fit, transf = metafor::transf.ilogit)
 
   data.frame(
-    Trajectory        = label,
-    Pooled_Prevalence = as.numeric(pr$pred),
-    CI_Lower          = as.numeric(pr$ci.lb),
-    CI_Upper          = as.numeric(pr$ci.ub),
+    Trajectory/Analysis        = label,
+    Pooled_Prevalence = round(as.numeric(pr$pred), 3),
+    CI_Lower          = round(as.numeric(pr$ci.lb), 3),
+    CI_Upper          = round(as.numeric(pr$ci.ub), 3),
     Samples_included  = fit$k,
-    Logit_Estimate    = unname(coef(fit)[1]),
-    τ2                = as.numeric(fit$tau2),
+    Logit_Estimate    = round(unname(coef(fit)[1]), 3),
+    τ2                = round(as.numeric(fit$tau2), 3),
     check.names = FALSE
   )
 }
@@ -1646,3 +1646,4 @@ gt::gtsave(gt_all, "prevalences-sensitivity-table.rtf")
 gt::gtsave(gt_all, "prevalences-sensitivity-table.png", vwidth = 700) 
 
 ```
+
