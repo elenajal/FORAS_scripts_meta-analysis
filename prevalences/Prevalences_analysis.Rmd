@@ -133,13 +133,11 @@ fit_glmm_prev <- function(df, event_col, n_col = "Sample_Size", label = event_co
 We provide additional descriptives based on the Low trajectory variable, using the full dataset.
 
 ```{r Low-descriptives}
-
 # Copy the dataset to avoid overwriting the original
 df_low <- df_moderation
 
 # Ensure Low_percentage is numeric
 df_low$Low_percentage <- as.numeric(df_low$Low_percentage)
-
 
 # Calculate Low_n as (percentage / 100) * sample size
 df_low$Low_n <- round((df_low$Low_percentage / 100) * df_low$Sample_Size)
@@ -1543,6 +1541,7 @@ gt::gtsave(gt_all, "prevalences-sensitivity-table.rtf")
 gt::gtsave(gt_all, "prevalences-sensitivity-table.png", vwidth = 700) 
 
 ```
+
 
 
 
