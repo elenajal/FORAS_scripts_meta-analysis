@@ -92,7 +92,7 @@ if (knitr::is_html_output() || knitr::is_latex_output()) {
       `Mean Age` = ifelse(is.na(`Mean Age`), NA, sprintf("%.1f", `Mean Age`)),
       `Percentage Women` = ifelse(is.na(`Percentage Women`), NA, sprintf("%.1f%%", `Percentage Women`))
     ) |>
-    knitr::kable(format = fmt, caption = "Study Overview", booktabs = TRUE, linesep = "") |>
+    knitr::kable(format = fmt, caption = "General Descriptive Variables per Sample", booktabs = TRUE, linesep = "") |>
     kableExtra::kable_styling(full_width = FALSE, position = "left",
                               bootstrap_options = c("striped", "hover", "condensed")) |>
     kableExtra::column_spec(1, bold = TRUE) |>
@@ -1623,3 +1623,4 @@ gt::gtsave(gt_all, "prevalences-sensitivity-table.rtf")
 gt::gtsave(gt_all, "prevalences-sensitivity-table.png", vwidth = 700) 
 
 ```
+
