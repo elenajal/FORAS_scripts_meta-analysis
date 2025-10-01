@@ -71,7 +71,7 @@ knitr::kable(summary_table, caption = "Descriptive Statistics of the Dataset")
 
 ```{r descriptives-studies-table}
 overview <- tibble(
-  `Authors (Study)` = df_moderation$Study,
+  `Author(s), Year_SampleName` = df_moderation$Study,
   `Sample Size`     = df_moderation$Sample_Size,
   `Mean Age`        = df_moderation$Mean_age,
   `Percentage Women`= df_moderation$Percentage_women,
@@ -80,7 +80,7 @@ overview <- tibble(
   `Number of Trajectories Found` = df_moderation$N_trajectories
 
   ) |> 
-  arrange(`Authors (Study)`)
+  arrange(`Author(s), Year_SampleName`)
 
 if (knitr::is_html_output() || knitr::is_latex_output()) {
   fmt <- if (knitr::is_latex_output()) "latex" else "html"
@@ -91,10 +91,12 @@ if (knitr::is_html_output() || knitr::is_latex_output()) {
       `Mean Age` = ifelse(is.na(`Mean Age`), NA, sprintf("%.1f", `Mean Age`)),
       `Percentage Women` = ifelse(is.na(`Percentage Women`), NA, sprintf("%.1f%%", `Percentage Women`))
     ) |>
-    knitr::kable(format = fmt, caption = "Study Overview", booktabs = TRUE, linesep = "") |>
+    knitr::kable(format = fmt, caption = "General Descriptive Variables per Sample", booktabs = TRUE, linesep = "") |>
     kableExtra::kable_styling(full_width = FALSE, position = "left",
                               bootstrap_options = c("striped", "hover", "condensed")) |>
     kableExtra::column_spec(1, bold = TRUE) |>
+    kableExtra::row_spec(0,  extra_css = "font-family: 'Times New Roman', Times, serif;") |>
+    kableExtra::row_spec(1:nrow(overview), extra_css = "font-family: 'Times New Roman', Times, serif;") |>
     kableExtra::scroll_box(height = "470px")
 }
 ```
@@ -920,6 +922,36 @@ knitr::kable(glmer_summary_Moderate, caption = "Moderate Trajectory Estimate fro
 ```
 
 # Tables for Paper
+
+## Descriptives Table Export
+
+```{r big-descriptives-table}
+# Export to word
+overview_fmt <- overview %>%
+  mutate(
+    `Sample Size`       = format(`Sample Size`, big.mark = ",", trim = TRUE),
+    `Mean Age`          = ifelse(is.na(`Mean Age`), NA, sprintf("%.1f", `Mean Age`)),
+    `Percentage Women`  = ifelse(is.na(`Percentage Women`), NA, sprintf("%.1f%%", `Percentage Women`))
+  )
+
+ft <- flextable::flextable(overview_fmt) |> 
+  flextable::align(j = c("Sample Size","Mean Age","Percentage Women","Number of TP assessments","Number of Trajectories Found"), align = "right", part = "all") |> 
+  flextable::align(j = c("Author(s), Year_SampleName","Assessed Trauma Type"), align = "left", part = "all") |> 
+  flextable::bold(part = "header", bold = TRUE) |> flextable::fontsize(part = "all", size = 8) |> 
+  flextable::font(part = "all", fontname = "Times New Roman") |> 
+  flextable::border_outer(part = "all", border = officer::fp_border(color = "black", width = 1)) |> 
+  flextable::border_inner_h(border = officer::fp_border(color = "transparent", width = 0), part = "all") |> 
+  flextable::border_inner_v(border = officer::fp_border(color = "transparent", width = 0), part = "all") |> 
+  flextable::border(i = 1, border.bottom = officer::fp_border(color = "black", width = 1), part = "header") |> 
+  flextable::autofit()
+
+# docx export
+flextable::save_as_docx("Table 1" = ft, path = "Descriptives_Table.docx", pr_section = officer::prop_section(
+    page_size   = officer::page_size(orient = "landscape")
+  )
+)
+```
+
 ## Prevalences Summary Table
 
 ```{r prevalences-summary-table, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
@@ -1195,6 +1227,6 @@ gt_all
 
 # Exports
 gt::gtsave(gt_all, "prevalences-sensitivity-table.rtf")
-gt::gtsave(gt_all, "prevalences-sensitivity-table.png", vwidth = 700)
 
+gt::gtsave(gt_all, "prevalences-sensitivity-table.png", vwidth = 700) 
 ```
