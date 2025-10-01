@@ -235,11 +235,11 @@ abline(h = threshold, col = "red", lty = 2)
 
 # Identify studies above the threshold
 influential_indices <- which(cooks > threshold)
-influential_studies <- unique(df_low$Study[influential_indices])
+influential_studies_Low <- unique(df_low$Study[influential_indices])
 
 # Display studies
 influential_table <- data.frame(
-  Study_ID = influential_studies,
+  Study_ID = influential_studies_Low,
   Cooks_Distance = round(cooks[influential_indices], 3)
 )
 
@@ -251,7 +251,7 @@ We reran the GLMM excluding the identified influential studies.
 ```{r Low-sens-influential}
 # Exclude the influential studies
 df_Low_noinf <- df_low %>%
-  filter(!Study %in% influential_studies)
+  filter(!Study %in% influential_studies_Low)
 
 # Refit GLMM (metafor version)
 glmm_Low_noinf <- fit_glmm_prev(df_Low_noinf, "Low_n", "Sample_Size",
@@ -1543,6 +1543,7 @@ gt::gtsave(gt_all, "prevalences-sensitivity-table.rtf")
 gt::gtsave(gt_all, "prevalences-sensitivity-table.png", vwidth = 700) 
 
 ```
+
 
 
 
