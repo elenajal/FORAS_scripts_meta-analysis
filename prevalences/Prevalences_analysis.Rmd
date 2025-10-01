@@ -1053,23 +1053,24 @@ gt::gtsave(tbl1, "prevalences-summary-table.rtf")
 
 ## Sensitivity Analyses Summary
 
-```{r sensitivity-summary-table}
-# build one row per trajectory from the GLMM fit
-mk_row <- function(fit, label) {
-  prev  <- plogis(as.numeric(coef(fit)))
-  ci_lb <- plogis(as.numeric(fit$ci.lb))
-  ci_ub <- plogis(as.numeric(fit$ci.ub))
+```{r sensitivity-summary-table, message=FALSE, warning=FALSE}
+mk_row_df <- function(res_df, label) {
+  # res_df is the one-row data.frame returned by fit_glmm_prev()
+  r <- res_df[1, , drop = FALSE]
   tibble(
     Analysis = label,
-    k        = as.integer(fit$k),
+    k        = as.integer(r$Samples_included),
     `Relative Prevalence (95% CI)` =
-      sprintf("%.1f%% [%.1f%% – %.1f%%]", 100 * prev, 100 * ci_lb, 100 * ci_ub),
-    `Logit Estimate` = as.numeric(coef(fit)),
-    tau2             = if (!is.null(fit$tau2)) as.numeric(fit$tau2) else NA_real_
+      sprintf("%.1f%% [%.1f%% – %.1f%%]",
+              100 * as.numeric(r$Pooled_Prevalence),
+              100 * as.numeric(r$CI_Lower),
+              100 * as.numeric(r$CI_Upper)),
+    `Logit Estimate` = as.numeric(r$Logit_Estimate),
+    tau2             = suppressWarnings(as.numeric(r$`τ2`))
   )
 }
 
-# define components of the table (trajectory names & analysis names)
+# Labels / mappings
 trajectory_map <- c(
   "Low"        = "Low symptoms",
   "Decreasing" = "Decreasing symptoms",
@@ -1085,37 +1086,33 @@ analysis_map <- c(
   "noinf" = "Excluding influential studies"
 )
 
-# Build a spec table combining every trajectory with every analysis 
-all_specs <- crossing(
+# Build the spec of objects to look up (glmm_<traj>[_<stub>])
+all_specs <- tidyr::crossing(
   trajectory_stub = names(trajectory_map),
   analysis_stub   = names(analysis_map)
 ) |>
-# Add derived columns to the Cartesian product above  
-mutate(
+  mutate(
     object_name = if_else(
       analysis_stub == "Main",
       paste0("glmm_", trajectory_stub),
       paste0("glmm_", trajectory_stub, "_", analysis_stub)
     ),
-    # Look up human-readable trajectory and analysis label by name.
-    # indexing by _stub returns the corresponding value.
     Trajectory = trajectory_map[trajectory_stub],
     Analysis   = analysis_map[analysis_stub]
   )
 
-# build the table
-big_tbl <- pmap_dfr(
+# Build the table by reading the one-row data.frames created earlier
+big_tbl <- purrr::pmap_dfr(
   all_specs,
   function(object_name, Trajectory, Analysis, ...) {
-    fit <- tryCatch(get(object_name, envir = .GlobalEnv), error = \(e) NULL)
-    if (!is.null(fit)) {
-      mk_row(fit, Analysis) |>
-        mutate(Trajectory = Trajectory, .before = 1)
+    obj <- tryCatch(get(object_name, envir = .GlobalEnv), error = \(e) NULL)
+    if (!is.null(obj) && is.data.frame(obj) && nrow(obj) >= 1) {
+      mk_row_df(obj, Analysis) |> mutate(Trajectory = Trajectory, .before = 1)
     }
   }
 )
 
-# enfore trajectory order
+# Enforce display order
 trajectory_order <- c(
   "Low symptoms",
   "Decreasing symptoms",
@@ -1128,12 +1125,12 @@ big_tbl_ordered <- big_tbl |>
   mutate(Trajectory = factor(Trajectory, levels = trajectory_order)) |>
   arrange(Trajectory)
 
-# create gt table
+# Create gt table
 gt_all <-
   gt(big_tbl_ordered, groupname_col = "Trajectory") |>
   tab_style(
     style = cell_text(weight = "bold"),
-    locations = cells_row_groups() # group analyses by trajectory
+    locations = cells_row_groups()
   ) |>
   cols_label(
     Analysis = "Analysis",
@@ -1147,13 +1144,12 @@ gt_all <-
   cols_align(align = "center", columns = c(k, `Relative Prevalence (95% CI)`, `Logit Estimate`, tau2)) |>
   opt_row_striping() |>
   tab_options(
-    table.font.names = c("Times New Roman", "Times", "serif"),  # force times new roman font in outputs
+    table.font.names = c("Times New Roman", "Times", "serif"),
     data_row.padding = px(6),
     column_labels.font.weight = "bold",
     row_group.as_column = FALSE,
     table.font.size = px(13)
   ) |>
-  # smaller notes/footnotes
   tab_style(
     style = cell_text(size = px(11), font = "Times New Roman"),
     locations = list(cells_source_notes(), cells_footnotes())
@@ -1162,58 +1158,24 @@ gt_all <-
     "<em>Note.</em> <em>k</em> represents the number of unique samples. Logit estimate reflects pooled prevalence on a log-odds scale. <em>&tau;<sup>2</sup></em> indicates between-study heterogeneity; values &gt; 0.50 suggest substantial heterogeneity."
   ))
 
-
-# Auto-notes for excluded influential papers using Study variable ("Author, Year")
-.get_model_data <- function(fit) { # recovers the original data frame used to fit a model
-  d <- tryCatch({
-    cd <- fit$call$data
-    if (is.symbol(cd)) get(as.character(cd), envir = .GlobalEnv)
-    else if (is.character(cd)) get(cd, envir = .GlobalEnv)
-    else NULL
-  }, error = function(e) NULL)
-  if (is.null(d)) tryCatch(model.frame(fit), error = function(e) NULL) else d
+# Footnotes for excluded influential studies 
+.influential_for <- function(traj_stub) {
+  nm <- paste0("influential_studies_", traj_stub)
+  v  <- tryCatch(get(nm, envir = .GlobalEnv), error = \(e) NULL)
+  if (is.null(v)) character(0) else as.character(v)
 }
-
-.used_rows <- function(fit, n_df) { # Figures out which rows of the original data were kept when the model was fit.
-  if (!is.null(fit$not.na) && length(fit$not.na) == n_df) which(fit$not.na) else seq_len(n_df)
-}
-
-.labels_from_study <- function(fit) { # Gets the model’s data via .get_model_data(fit) and uses .used_rows() to take only rows actually used in the fit.
-  df <- .get_model_data(fit)
-  if (is.null(df)) return(character(0))
-  nm <- if ("Study" %in% names(df)) "Study" else if ("study" %in% names(df)) "study" else stop("Column 'Study' not found.")
-  idx <- .used_rows(fit, nrow(df))
-  as.character(df[[nm]])[idx]
-}
-
-.excluded_study_labels <- function(traj_stub) { # Gets trimmed study labels frommain model and noinf model using .labels_from_study()
-  main_fit  <- tryCatch(get(paste0("glmm_", traj_stub), envir = .GlobalEnv), error = function(e) NULL)
-  noinf_fit <- tryCatch(get(paste0("glmm_", traj_stub, "_noinf"), envir = .GlobalEnv), error = function(e) NULL)
-  if (is.null(main_fit)) return(character(0))
-  main_labs <- trimws(.labels_from_study(main_fit))
-  if (!is.null(noinf_fit)) {
-    noinf_labs <- trimws(.labels_from_study(noinf_fit))
-    setdiff(main_labs, noinf_labs)
-  } else {
-    character(0)  # no _noinf model => no exclusions to show
-  }
-}
-
 format_note <- function(vec) {
   if (length(vec) == 0) "No influential studies excluded."
   else paste0("Excluded influential studies: ", paste(vec, collapse = "; "))
 }
 
-# Build notes per displayed group label:
-# Name the resulting list with the display labels from trajectory_map
 excluded_by_group <- setNames(
-  lapply(names(trajectory_map), .excluded_study_labels),
+  lapply(names(trajectory_map), .influential_for),
   nm = unname(trajectory_map[names(trajectory_map)])
 )
-# apply format_note()
 excluded_notes <- lapply(excluded_by_group, format_note)
 
-# Attach footnote to the “Excluding influential studies” row within each group
+# add notes to table
 gt_all <- purrr::reduce(
   names(excluded_notes),
   .init = gt_all,
@@ -1231,11 +1193,12 @@ gt_all <- purrr::reduce(
 
 gt_all
 
-# Export to rtf and png to use in paper
+# Exports
 gt::gtsave(gt_all, "prevalences-sensitivity-table.rtf")
-gt::gtsave(gt_all, "prevalences-sensitivity-table.png", vwidth = 700) 
+gt::gtsave(gt_all, "prevalences-sensitivity-table.png", vwidth = 700)
 
 ```
+
 
 
 
