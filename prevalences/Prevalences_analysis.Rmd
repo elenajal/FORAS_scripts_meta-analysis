@@ -922,61 +922,87 @@ knitr::kable(glmer_summary_Moderate, caption = "Moderate Trajectory Estimate fro
 # Tables for Paper
 ## Prevalences Summary Table
 
-```{r prevalences-summary-table}
-# Set trajectory order & define fitted models
-traj_order <- c("Low","Decreasing","Increasing","High","Moderate")
-
-fits <- list(
-  Low        = glmm_Low,
-  Decreasing = glmm_Decreasing,
-  Increasing = glmm_Increasing,
-  High       = glmm_High,
-  Moderate   = glmm_Moderate
+```{r prevalences-summary-table, echo=FALSE, message=FALSE, warning=FALSE, results='asis'}
+# Trajectory specification
+traj_specs <- tibble::tribble(
+  ~trajectory,  ~perc_col,             ~event_col,
+  "Low",        "Low_percentage",      "Low_n",
+  "Decreasing", "Decreasing_percentage","Decreasing_n",
+  "Increasing", "Increasing_percentage","Increasing_n",
+  "High",       "High_percentage",     "High_n",
+  "Moderate",   "Moderate_percentage", "Moderate_n"
 )
 
-# define number of people per trajectory with percentage
-trajectory_counts <- tibble(
-  trajectory = factor(traj_order, levels = traj_order),
-  N = c(
-    total_Low_n,
-    total_Decreasing_n,
-    total_Increasing_n,
-    total_High_n,
-    total_Moderate_n
+# build a per-trajectory analysis frame & run GLMM
+build_and_fit <- function(df, perc_col, event_col, label = perc_col) {
+  df <- df %>% mutate(
+    !!perc_col := as.numeric(.data[[perc_col]]),
+    !!event_col := round((.data[[perc_col]] / 100) * .data[["Sample_Size"]])
   )
-) |>
-  mutate(pct = round(100 * N / sum(N), 1))
 
-# define k (unique samples) per trajectory
-k_vec <- c(
-  Low        = as.integer(unique_Low_studies),
-  Decreasing = as.integer(unique_Decreasing_studies),
-  Increasing = as.integer(unique_Increasing_studies),
-  High       = as.integer(unique_High_studies),
-  Moderate   = as.integer(unique_Moderate_studies)
-)
+  # Counts for N and k
+  total_n <- sum(df[[event_col]], na.rm = TRUE)
+  k_unique <- length(unique(df$Study[!is.na(df[[perc_col]])]))
 
-# build one row per trajectory from the GLMM fit
-row_from <- function(name, fit) {
-  pr <- predict(fit, transf = transf.ilogit)
-  tibble(
-    trajectory = name,
-    rel_prev   = sprintf("%.1f%%", pr$pred * 100), # Relative Prevalence Column
-    ci_95      = sprintf("%.1f to %.1f%%", pr$ci.lb * 100, pr$ci.ub * 100), # 95% Confidence Interval
-    k          = k_vec[[name]], # unique studies
-    N_pct      = sprintf(
-                   "%s (%.1f%%)",
-                   format(trajectory_counts$N[trajectory_counts$trajectory == name], big.mark = ","),
-                   trajectory_counts$pct[trajectory_counts$trajectory == name]
-                 ), # number of people in trajectory & % of total number of people
-    logit      = round(unname(coef(fit)[1]), 2), # logit estimate
-    tau2       = round(as.numeric(fit$tau2), 2) # between-study heterogeneity
+  # Run your portable GLMM (uses your new function)
+  fit_row <- fit_glmm_prev(df, event_col = event_col, n_col = "Sample_Size", label = label)
+
+  list(
+    df = df,
+    total_n = total_n,
+    k = k_unique,
+    fit = fit_row
   )
 }
 
-table1_df <- bind_rows(lapply(traj_order, function(nm) row_from(nm, fits[[nm]])))
+# analyses for all trajectories 
+analyses <- traj_specs %>%
+  rowwise() %>%
+  mutate(res = list(build_and_fit(df_moderation, perc_col, event_col, trajectory))) %>%
+  ungroup()
 
-# Render table
+# totals for N (%) 
+totals <- analyses %>%
+  mutate(N = purrr::map_dbl(res, "total_n")) %>%     # <-- ensure a numeric vector
+  transmute(
+    trajectory = factor(trajectory, levels = traj_specs$trajectory),
+    N
+  ) %>%
+  mutate(pct = round(100 * N / sum(N, na.rm = TRUE), 1))
+
+# Extract model rows & assemble final table data
+fits_df <- analyses %>%
+  mutate(
+    k   = purrr::map_int(res, "k"),             
+    fit = purrr::map(res, "fit")
+  ) %>%
+  select(trajectory, k, fit) %>%
+  tidyr::unnest_wider(fit) %>%
+  transmute(
+    trajectory,
+    rel_prev = sprintf("%.1f%%", 100 * Pooled_Prevalence),
+    ci_95    = sprintf("%.1f to %.1f%%", 100 * CI_Lower, 100 * CI_Upper),
+    k        = as.integer(k),
+    logit    = round(Logit_Estimate, 2),
+    tau2     = round(`τ2`, 2)
+  )
+
+
+# Join counts and format N (%)
+table1_df <- fits_df %>%
+  left_join(totals, by = "trajectory") %>%
+  transmute(
+    trajectory,
+    rel_prev,
+    ci_95,
+    k,
+    N_pct = sprintf("%s (%.1f%%)", format(N, big.mark = ","), pct),
+    logit,
+    tau2
+  ) %>%
+  arrange(factor(trajectory, levels = traj_specs$trajectory))
+
+# Render with gt
 tbl1 <- table1_df |>
   gt() |>
   cols_label(
@@ -1001,25 +1027,26 @@ tbl1 <- table1_df |>
     table.width = pct(100),
     data_row.padding = px(6),
     table.font.size = px(13),
-    table.font.names = "Times New Roman"
+    table.font.names = "Times New Roman",
+    column_labels.font.weight = "bold"
   ) |>
   tab_source_note(
     source_note = html("<em>Note.</em> <em>k</em> represents the number of unique samples. Logit estimate reflects pooled prevalence on a log-odds scale. <em>&tau;<sup>2</sup></em> indicates between-study heterogeneity; values &gt; 0.50 suggest substantial heterogeneity.")
   ) |>
   tab_style(
-    style = cell_text(size = px(11)),       
+    style = cell_text(size = px(11)),
     locations = cells_source_notes()
   ) |>
   opt_table_font(
     font = list(
       google_font("Times New Roman"),
-      default_fonts()     
+      default_fonts()
     )
   )
 
-print(tbl1)
+tbl1
 
-# Also export a Word-friendly file alongside the HTML
+# Optional exports
 gt::gtsave(tbl1, "prevalences-summary-table.png", vwidth = 700)
 gt::gtsave(tbl1, "prevalences-summary-table.rtf")
 ```
@@ -1209,6 +1236,7 @@ gt::gtsave(gt_all, "prevalences-sensitivity-table.rtf")
 gt::gtsave(gt_all, "prevalences-sensitivity-table.png", vwidth = 700) 
 
 ```
+
 
 
 
