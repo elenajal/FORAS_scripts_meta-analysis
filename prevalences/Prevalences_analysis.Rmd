@@ -171,7 +171,7 @@ glmm_Low <- fit_glmm_prev(df_low, event_col = "Low_n", n_col = "Sample_Size",
                              label = "Main Analysis")
 
 # Display result
-knitr::kable(Low_summary, caption = "Pooled Prevalence Estimate for Low Trajectory (GLMM)")
+knitr::kable(glmm_Low, caption = "Pooled Prevalence Estimate for Low Trajectory (GLMM)")
 ```
 
 ### Sensitivity Analysis 1
@@ -250,7 +250,7 @@ We reran the GLMM excluding the identified influential studies.
 
 ```{r Low-sens-influential}
 # Exclude the influential studies
-df_Low_noif <- df_low %>%
+df_Low_noinf <- df_low %>%
   filter(!Study %in% influential_studies)
 
 # Refit GLMM (metafor version)
@@ -1543,5 +1543,6 @@ gt::gtsave(gt_all, "prevalences-sensitivity-table.rtf")
 gt::gtsave(gt_all, "prevalences-sensitivity-table.png", vwidth = 700) 
 
 ```
+
 
 
