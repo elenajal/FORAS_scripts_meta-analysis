@@ -81,7 +81,7 @@ overview <- tibble(
   `Number of Trajectories Found` = df_moderation$N_trajectories
 
   ) |> 
-  arrange(`Authors (Study)`)
+  arrange(`Author(s), Year_SampleName`)
 
 if (knitr::is_html_output() || knitr::is_latex_output()) {
   fmt <- if (knitr::is_latex_output()) "latex" else "html"
@@ -1623,5 +1623,6 @@ gt::gtsave(gt_all, "prevalences-sensitivity-table.rtf")
 gt::gtsave(gt_all, "prevalences-sensitivity-table.png", vwidth = 700) 
 
 ```
+
 
 
