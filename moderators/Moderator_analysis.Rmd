@@ -198,6 +198,78 @@ fit_cat <- function(data, var, keep = NULL, ref = NULL,
   )
 }
 ```
+## Tables Setup
+
+```{r mods-setup-tables}
+# helpers for p formatting
+fmt_p <- function(p) ifelse(is.na(p), "", ifelse(p < .001, "< .001", sprintf("%.3f", p)))
+sig   <- function(p) dplyr::case_when(is.na(p) ~ "", p < .001 ~ "***", p < .01 ~ "**", p < .05 ~ "*", TRUE ~ "")
+
+# Moderator labels for tables
+mod_labels <- c(
+  Percentage_women    = "Percentage of women",
+  Mean_age            = "Mean age",
+  Percentage_minority = "Minorities (%)",
+  Percentage_partner  = "Having a partner (%)",
+  High_education      = "Education (%)",
+  TP_assessments      = "Time point PTSD assessments",
+  N_trajectories      = "Number of trajectories",
+  Trauma_TP1          = "Time between trauma and first assessment (months)",
+  TP1_TPX             = "Time span of the study (months)",
+  Trauma_TPX          = "Time between trauma and last assessment (months)",
+  Entropy             = "Entropy",
+  Grolts              = "Quality score",
+  Sample_Size_100     = "Sample size / 100",
+  Diagnostic_DSM      = "Diagnostic Criteria",
+  Occupational_trauma = "Occupational trauma",
+  Developmental_age   = "Developmental age",
+  Location            = "Country income",
+  Location_US         = "US vs Non-US",
+  Trajectory_analysis = "LGMM vs LCGA",
+  Scale_moderator     = "PTSD symptom assessment",
+  Trauma_exposure     = "Trauma exposure",
+  Trauma_type         = "Trauma nature",
+  Military            = "Civilian vs Military",
+  Discrete            = "Discrete vs non-discrete trauma",
+  Health_First        = "HP/First responders vs other"
+)
+
+# continuous variable labels for tables
+mod_levels <- unname(mod_labels)
+delta_col  <- "Marginal Δ"  # use literal Δ; save file as UTF-8
+
+# categorical moderator level labels for tables
+level_labels <- list(
+  Diagnostic_DSM      = c(`4` = "DSM-IV", `5` = "DSM-5"),
+  Occupational_trauma = c(No = "No", Yes = "Yes"),
+  Developmental_age   = c(Adult = "Adult", Youth = "Youth"),
+  Location            = c(
+    "High income countries" = "High income countries",
+    "High-income countries" = "High income countries",
+    "High"                  = "High income countries",
+    "HIC"                   = "High income countries",
+    "Mid-, low- income"     = "Mid-, low- income",
+    "Mid/low income"        = "Mid-, low- income",
+    "LMIC"                  = "Mid-, low- income"
+  ),
+  Location_US         = c(`Non-US` = "Non-US", US = "US"),
+
+  Trajectory_analysis = c(LCGA = "LCGA", LGMM = "LGMM"),
+  Scale_moderator     = c(Interview = "Interview", Self = "Self-reported scale"),
+  Trauma_exposure     = c(Inter = "Interpersonal trauma", Non = "Non-interpersonal trauma"),
+  Trauma_type         = c(Combat = "Combat", Injury = "Injury", Natural = "Natural disaster"),
+  Military            = c(No = "Civilian", Yes = "Military"),
+  Discrete            = c(No = "Non-discrete", Yes = "Discrete"),
+  Health_First        = c(Yes = "HP/First responder", No = "Other")
+)
+
+# Build a lookup tibble we can join onto both ref and comparison
+lvl_map <- purrr::imap_dfr(level_labels, ~tibble::tibble(
+  moderator = .y,
+  orig      = names(.x),
+  pretty    = unname(.x)
+))
+```
 
 ## 🚀 Low Symptom Trajectory
 
@@ -2248,4 +2320,5 @@ plogis(fixef(model)["(Intercept)"])  # Yes (reference)
 plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Health_First)No"])
 ```
 ---
+
 
