@@ -932,10 +932,3 @@ Moderate_cat_table %>%
   )
 ```
 ---
-
-
-
-
-
-
-
