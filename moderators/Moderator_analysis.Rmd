@@ -935,5 +935,58 @@ Moderate_cat_table %>%
     table.font.size = px(13)
   )
 ```
+
+# Tables for Paper
+## Continuous Moderators Summary Table
+
+```{r cont-mods-summary-table}
+# enforce trajectory order
+traj_order <- c("Low","Decreasing","Increasing","High","Moderate")
+
+#define trajectory fits
+fits_by_traj <- list(
+  Low        = fits_cont_Low,
+  Decreasing = fits_cont_Decreasing,
+  Increasing = fits_cont_Increasing,
+  High       = fits_cont_High,
+  Moderate   = fits_cont_Moderate
+)
+
+# build combined table
+tbl_all <- bind_rows(fits_by_traj, .id = "Trajectory") %>%
+  mutate(
+    Trajectory = factor(Trajectory, levels = traj_order),
+    Predictor = dplyr::recode(predictor, !!!mod_labels, .default = predictor),
+    Predictor = factor(Predictor, levels = mod_levels),
+    `Prevalence (0%)` = sprintf("%.1f%%", prevalence_at_0_pct),
+    !!delta_col := marginal_delta_pp_per_unit,
+    `P-value` = paste0(fmt_p(p_value), ifelse(is.na(p_value), "", paste0(" ", sig(p_value)))),
+    Slope = slope
+  ) %>%
+  select(Trajectory, Predictor, Samples, `Prevalence (0%)`, Slope, dplyr::all_of(delta_col), `P-value`) %>%
+  arrange(Trajectory, Predictor)
+
+# ensure UTF-8
+tbl_all_utf8 <- tbl_all
+names(tbl_all_utf8) <- enc2utf8(names(tbl_all_utf8))
+tbl_all_utf8 <- mutate(tbl_all_utf8, across(where(is.character), enc2utf8))
+
+# render one big table, grouped by Trajectory
+tbl_all_utf8 %>%
+  gt(groupname_col = "Trajectory") %>%
+  cols_width(Predictor ~ px(220)) %>%
+  cols_align(align = "center", columns = -Predictor) %>%
+  cols_align(align = "left",   columns = Predictor) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = list(
+      cells_column_labels(columns = everything()),    # bold headers
+      cells_row_groups(groups = everything())         # bold group labels
+    )
+  ) %>%
+  tab_options(table.width = pct(100)) %>%
+  opt_table_font(font = "Times New Roman") 
+```
 ---
+
 
