@@ -22,7 +22,6 @@ knitr::opts_chunk$set(echo = TRUE, warning = TRUE, message = FALSE, cache = FALS
 
 # Set the root directory for the entire document (recommended way)
 knitr::opts_knit$set(root.dir = dirname(rstudioapi::getActiveDocumentContext()$path))
-
 ```
 
 # Preparation
@@ -50,13 +49,11 @@ df_moderation <- df_moderation %>%
 head(df_moderation)
 ```
 
-
 ## Descriptive Statistics
 
 We provide basic descriptive statistics of the included studies, without excluding any data due to missingness.
 
 ```{r descriptives}
-
 # Calculate descriptives
 total_number_of_samples <- nrow(df_moderation)
 total_sample_size <- sum(df_moderation$Sample_Size, na.rm = TRUE)
@@ -69,8 +66,8 @@ summary_table <- data.frame(
 
 # Display as a table
 knitr::kable(summary_table, caption = "Descriptive Statistics of the Dataset")
-
 ```
+
 # Moderator Analyses
 
 Here we fit separate binomial GLMMs (random intercept for `Study`) for each moderator. For continuous moderators, we report the estimated prevalence at the reference (moderator = 0) and the marginal delta (approximate change in percentage points per 1‑unit increase). For categorical moderators, we report the estimated prevalence for the reference level and contrasted level(s).
@@ -203,6 +200,7 @@ fit_cat <- function(data, var, keep = NULL, ref = NULL,
   )
 }
 ```
+
 ## Tables Setup
 
 ```{r mods-setup-tables}
@@ -289,9 +287,8 @@ df_Low$Low_percentage <- as.numeric(df_Low$Low_percentage)
 # Calculate Low_n as (percentage / 100) * sample size
 df_Low$Low_n <-
   round((df_Low$Low_percentage / 100) * df_Low$Sample_Size)
-
-
 ```
+
 ### Descriptives
 
 We provide additional descriptives based on the Low trajectory variable, using the full dataset.
@@ -312,6 +309,7 @@ additional_info <- data.frame(
 
 knitr::kable(additional_info, caption = "Additional Descriptives for Low Trajectory Analysis")
 ```
+
 ### Continuous moderators
 
 ```{r Low-mods-cont}
@@ -415,7 +413,6 @@ Low_cat_table %>%
 ## 🌿 Decreasing Symptom Trajectory
 
 ```{r Decreasing-moderators-setup}
-
 df_Decreasing <- df_moderation %>%
   filter(!is.na(Decreasing_percentage))
 
@@ -446,6 +443,7 @@ additional_info <- data.frame(
 
 knitr::kable(additional_info, caption = "Additional Descriptives for Decreasing Trajectory Analysis")
 ```
+
 ### Continuous moderators
 
 ```{r Decreasing-mods-cont}
@@ -550,7 +548,6 @@ Decreasing_cat_table %>%
 ## ⚠️ Increasing Symptom Trajectory
 
 ```{r Increasing-moderators-setup}
-
 df_Increasing <- df_moderation %>%
   filter(!is.na(Increasing_percentage))
 
@@ -560,14 +557,13 @@ df_Increasing$Increasing_percentage <- as.numeric(df_Increasing$Increasing_perce
 # Calculate Increasing_n as (percentage / 100) * sample size
 df_Increasing$Increasing_n <-
   round((df_Increasing$Increasing_percentage / 100) * df_Increasing$Sample_Size)
-
 ```
+
 ### Descriptives
 
 We provide additional descriptives based on the Increasing trajectory variable, using the full dataset.
 
 ```{r Increasing-descriptives}
-
 # Total number of individuals classified as Increasing (ignoring missingness in other variables)
 total_Increasing_n <- sum(df_Increasing$Increasing_n, na.rm = TRUE)
 
@@ -582,6 +578,7 @@ additional_info <- data.frame(
 
 knitr::kable(additional_info, caption = "Additional Descriptives for Increasing Trajectory Analysis")
 ```
+
 ### Continuous moderators
 
 ```{r Increasing-mods-cont}
@@ -683,7 +680,6 @@ Increasing_cat_table %>%
 ## 🩸 High Symptom Trajectory
 
 ```{r High-moderators-setup}
-
 df_High <- df_moderation
 
 df_High <- df_High %>%
@@ -695,9 +691,8 @@ df_High$High_n <-
 
 # Ensure High_percentage is numeric
 df_High$High_percentage <- as.numeric(df_High$High_percentage)
-
-
 ```
+
 ### Descriptives
 
 We provide additional descriptives based on the High trajectory variable, using the full dataset.
@@ -718,6 +713,7 @@ additional_info <- data.frame(
 
 knitr::kable(additional_info, caption = "Additional Descriptives for High Trajectory Analysis")
 ```
+
 ### Continuous moderators
 
 ```{r High-mods-cont}
@@ -820,9 +816,7 @@ High_cat_table %>%
 ## 🌗 Moderate Symptom Trajectory
 
 ```{r Moderate-moderators-setup}
-
 df_Moderate <- df_moderation
-
 
 df_Moderate <- df_Moderate %>%
   filter(!is.na(Moderate_percentage))
@@ -833,15 +827,13 @@ df_Moderate$Moderate_n <-
 
 # Ensure Moderate_percentage is numeric
 df_Moderate$Moderate_percentage <- as.numeric(df_Moderate$Moderate_percentage)
-
-
 ```
+
 ### Descriptives
 
 We provide additional descriptives based on the Moderate trajectory variable, using the full dataset.
 
 ```{r Moderate-descriptives}
-
 # Total number of individuals classified as Moderate (ignoring missingness in other variables)
 total_Moderate_n <- sum(df_Moderate$Moderate_n, na.rm = TRUE)
 
@@ -856,6 +848,7 @@ additional_info <- data.frame(
 
 knitr::kable(additional_info, caption = "Additional Descriptives for Moderate Trajectory Analysis")
 ```
+
 ### Continuous moderators
 
 ```{r Moderate-mods-cont}
@@ -954,16 +947,5 @@ Moderate_cat_table %>%
   )
 ```
 ---
-
-
-
-
-
-
-
-
-
-
-
 
 
