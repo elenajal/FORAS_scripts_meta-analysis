@@ -60,7 +60,7 @@ total_sample_size <- sum(df_moderation$Sample_Size, na.rm = TRUE)
 
 # Create a summary table
 summary_table <- data.frame(
-  Description = c("Number of studies / cohorts", "Total sample size (sum of available Sample_Size)"),
+  Description = c("Number of samples / cohorts", "Total sample size (sum of available Sample_Size)"),
   Value = format(c(total_number_of_samples, total_sample_size), big.mark = ",")
 )
 
@@ -295,13 +295,13 @@ We provide additional descriptives based on the Low trajectory variable, using t
 # Total number of individuals classified as Low (ignoring missingness in other variables)
 total_Low_n <- sum(df_Low$Low_n, na.rm = TRUE)
 
-# Number of unique studies (assumes a column Study exists)
-unique_studies <- length(unique(df_Low$Study))
+# Number of unique samples (assumes a column Study exists)
+unique_samples <- length(unique(df_Low$Study))
 
 # Display as a table
 additional_info <- data.frame(
-  Description = c("Total number of individuals in Low trajectory", "Number of unique studies"),
-  Value = format(c(total_Low_n, unique_studies), big.mark = ",")
+  Description = c("Total number of individuals in Low trajectory", "Number of unique samples"),
+  Value = format(c(total_Low_n, unique_samples), big.mark = ",")
 )
 
 knitr::kable(additional_info, caption = "Additional Descriptives for Low Trajectory Analysis")
@@ -426,13 +426,13 @@ We provide additional descriptives based on the Decreasing trajectory variable, 
 # Total number of individuals classified as Decreasing (ignoring missingness in other variables)
 total_Decreasing_n <- sum(df_Decreasing$Decreasing_n, na.rm = TRUE)
 
-# Number of unique studies (assumes a column Study exists)
-unique_studies <- length(unique(df_Decreasing$Study))
+# Number of unique samples (assumes a column Study exists)
+unique_samples <- length(unique(df_Decreasing$Study))
 
 # Display as a table
 additional_info <- data.frame(
-  Description = c("Total number of individuals in Decreasing trajectory", "Number of unique studies"),
-  Value = format(c(total_Decreasing_n, unique_studies), big.mark = ",")
+  Description = c("Total number of individuals in Decreasing trajectory", "Number of unique samples"),
+  Value = format(c(total_Decreasing_n, unique_samples), big.mark = ",")
 )
 
 knitr::kable(additional_info, caption = "Additional Descriptives for Decreasing Trajectory Analysis")
@@ -558,13 +558,13 @@ We provide additional descriptives based on the Increasing trajectory variable, 
 # Total number of individuals classified as Increasing (ignoring missingness in other variables)
 total_Increasing_n <- sum(df_Increasing$Increasing_n, na.rm = TRUE)
 
-# Number of unique studies (assumes a column Study exists)
-unique_studies <- length(unique(df_Increasing$Study))
+# Number of unique samples (assumes a column Study exists)
+unique_samples <- length(unique(df_Increasing$Study))
 
 # Display as a table
 additional_info <- data.frame(
-  Description = c("Total number of individuals in Increasing trajectory", "Number of unique studies"),
-  Value = format(c(total_Increasing_n, unique_studies), big.mark = ",")
+  Description = c("Total number of individuals in Increasing trajectory", "Number of unique samples"),
+  Value = format(c(total_Increasing_n, unique_samples), big.mark = ",")
 )
 
 knitr::kable(additional_info, caption = "Additional Descriptives for Increasing Trajectory Analysis")
@@ -690,13 +690,13 @@ We provide additional descriptives based on the High trajectory variable, using 
 # Total number of individuals classified as High (ignoring missingness in other variables)
 total_High_n <- sum(df_High$High_n, na.rm = TRUE)
 
-# Number of unique studies (assumes a column Study exists)
-unique_studies <- length(unique(df_High$Study))
+# Number of unique samples (assumes a column Study exists)
+unique_samples <- length(unique(df_High$Study))
 
 # Display as a table
 additional_info <- data.frame(
-  Description = c("Total number of individuals in High trajectory", "Number of unique studies"),
-  Value = format(c(total_High_n, unique_studies), big.mark = ",")
+  Description = c("Total number of individuals in High trajectory", "Number of unique samples"),
+  Value = format(c(total_High_n, unique_samples), big.mark = ",")
 )
 
 knitr::kable(additional_info, caption = "Additional Descriptives for High Trajectory Analysis")
@@ -822,13 +822,13 @@ We provide additional descriptives based on the Moderate trajectory variable, us
 # Total number of individuals classified as Moderate (ignoring missingness in other variables)
 total_Moderate_n <- sum(df_Moderate$Moderate_n, na.rm = TRUE)
 
-# Number of unique studies (assumes a column Study exists)
-unique_studies <- length(unique(df_Moderate$Study))
+# Number of unique samples (assumes a column Study exists)
+unique_samples <- length(unique(df_Moderate$Study))
 
 # Display as a table
 additional_info <- data.frame(
-  Description = c("Total number of individuals in Moderate trajectory", "Number of unique studies"),
-  Value = format(c(total_Moderate_n, unique_studies), big.mark = ",")
+  Description = c("Total number of individuals in Moderate trajectory", "Number of unique samples"),
+  Value = format(c(total_Moderate_n, unique_samples), big.mark = ",")
 )
 
 knitr::kable(additional_info, caption = "Additional Descriptives for Moderate Trajectory Analysis")
@@ -932,6 +932,7 @@ Moderate_cat_table %>%
   )
 ```
 ---
+
 
 
 
