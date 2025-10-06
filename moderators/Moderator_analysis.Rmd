@@ -70,7 +70,7 @@ knitr::kable(summary_table, caption = "Descriptive Statistics of the Dataset")
 
 # Moderator Analyses
 
-Here we fit separate binomial GLMMs (random intercept for `Study`) for each moderator. For continuous moderators, we report the estimated prevalence at the reference (moderator = 0) and the marginal delta (approximate change in percentage points per 1‑unit increase). For categorical moderators, we report the estimated prevalence for the reference level and contrasted level(s).
+Here we fit binomial GLMMs (random intercept for `Study`) separately for the continuous and categorical moderators. For continuous moderators, we report the estimated prevalence at the reference (moderator = 0) and the marginal delta (approximate change in percentage points per 1‑unit increase). For categorical moderators, we report the estimated prevalence for the reference level and contrasted level(s).
 
 ## Moderators setup
 ```{r mods-setup-functions}
@@ -947,5 +947,6 @@ Moderate_cat_table %>%
   )
 ```
 ---
+
 
 
