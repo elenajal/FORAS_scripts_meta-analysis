@@ -288,7 +288,7 @@ df_Low$Low_percentage <- as.numeric(df_Low$Low_percentage)
 
 # Calculate Low_n as (percentage / 100) * sample size
 df_Low$Low_n <-
-  round((df_low$Low_percentage / 100) * df_Low$Sample_Size)
+  round((df_Low$Low_percentage / 100) * df_Low$Sample_Size)
 
 
 ```
@@ -964,6 +964,7 @@ Moderate_cat_table %>%
   )
 ```
 ---
+
 
 
 
