@@ -295,7 +295,7 @@ We provide additional descriptives based on the Low trajectory variable, using t
 # Total number of individuals classified as Low (ignoring missingness in other variables)
 total_Low_n <- sum(df_Low$Low_n, na.rm = TRUE)
 
-# Number of unique samples (assumes a column Study exists)
+# Number of unique samples
 unique_samples <- length(unique(df_Low$Study))
 
 # Display as a table
@@ -426,7 +426,7 @@ We provide additional descriptives based on the Decreasing trajectory variable, 
 # Total number of individuals classified as Decreasing (ignoring missingness in other variables)
 total_Decreasing_n <- sum(df_Decreasing$Decreasing_n, na.rm = TRUE)
 
-# Number of unique samples (assumes a column Study exists)
+# Number of unique samples
 unique_samples <- length(unique(df_Decreasing$Study))
 
 # Display as a table
@@ -558,7 +558,7 @@ We provide additional descriptives based on the Increasing trajectory variable, 
 # Total number of individuals classified as Increasing (ignoring missingness in other variables)
 total_Increasing_n <- sum(df_Increasing$Increasing_n, na.rm = TRUE)
 
-# Number of unique samples (assumes a column Study exists)
+# Number of unique samples
 unique_samples <- length(unique(df_Increasing$Study))
 
 # Display as a table
@@ -690,7 +690,7 @@ We provide additional descriptives based on the High trajectory variable, using 
 # Total number of individuals classified as High (ignoring missingness in other variables)
 total_High_n <- sum(df_High$High_n, na.rm = TRUE)
 
-# Number of unique samples (assumes a column Study exists)
+# Number of unique samples
 unique_samples <- length(unique(df_High$Study))
 
 # Display as a table
@@ -822,7 +822,7 @@ We provide additional descriptives based on the Moderate trajectory variable, us
 # Total number of individuals classified as Moderate (ignoring missingness in other variables)
 total_Moderate_n <- sum(df_Moderate$Moderate_n, na.rm = TRUE)
 
-# Number of unique samples (assumes a column Study exists)
+# Number of unique samples
 unique_samples <- length(unique(df_Moderate$Study))
 
 # Display as a table
@@ -932,6 +932,7 @@ Moderate_cat_table %>%
   )
 ```
 ---
+
 
 
 
