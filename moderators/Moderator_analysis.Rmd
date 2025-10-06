@@ -1,6 +1,6 @@
 ---
 title: "Generalized Linear Mixed Models for Moderator Analyses"
-date: "2025-07-20"
+date: "2025-10-07"
 output:
   html_document:
     toc: true
@@ -22,70 +22,270 @@ knitr::opts_chunk$set(echo = TRUE, warning = TRUE, message = FALSE, cache = FALS
 
 # Set the root directory for the entire document (recommended way)
 knitr::opts_knit$set(root.dir = dirname(rstudioapi::getActiveDocumentContext()$path))
-
 ```
 
 # Preparation
 
 ```{r load-packages}
-library(readr)
-library(metafor)
+library(tidyverse)
 library(lme4)
-library(influence.ME)
-library(dplyr)
+library(broom.mixed)
+library(forcats)
+library(gt)
+library(knitr)
 ```
 
 ## Load Data
 
 ```{r load-data}
 # load data
-df_moderation <- read.csv2("../merging_and_testing/output/data_for_moderation_analyses.csv", dec = ".")
+df_moderation <- read.csv2("../pre-processing/output/data_for_moderation_analyses.csv", dec = ".")
+
+# calculate Sample_Size_100
+df_moderation <- df_moderation %>%
+  mutate(Sample_Size_100 = Sample_Size / 100)
 
 # Display the first rows to check the data
 head(df_moderation)
 ```
-
 
 ## Descriptive Statistics
 
 We provide basic descriptive statistics of the included studies, without excluding any data due to missingness.
 
 ```{r descriptives}
-
 # Calculate descriptives
 total_number_of_samples <- nrow(df_moderation)
 total_sample_size <- sum(df_moderation$Sample_Size, na.rm = TRUE)
 
 # Create a summary table
 summary_table <- data.frame(
-  Description = c("Number of studies / cohorts", "Total sample size (sum of available Sample_Size)"),
+  Description = c("Number of samples / cohorts", "Total sample size (sum of available Sample_Size)"),
   Value = format(c(total_number_of_samples, total_sample_size), big.mark = ",")
 )
 
 # Display as a table
 knitr::kable(summary_table, caption = "Descriptive Statistics of the Dataset")
-
 ```
+
 # Moderator Analyses
 
-Here we fit separate binomial GLMMs (random intercept for `Study`) for each moderator. For continuous moderators, we report the estimated prevalence at the reference (moderator = 0) and the marginal delta (approximate change in percentage points per 1‑unit increase). For categorical moderators, we report the estimated prevalence for the reference level and contrasted level(s).
+Here we fit binomial GLMMs (random intercept for `Study`) separately for the continuous and categorical moderators. For continuous moderators, we report the estimated prevalence at the reference (moderator = 0) and the marginal delta (approximate change in percentage points per 1‑unit increase). For categorical moderators, we report the estimated prevalence for the reference level and contrasted level(s).
+
+## Moderators setup
+```{r mods-setup-functions}
+# distinguish between continuous and categorical variables
+cont_vars <- c(
+  "Percentage_women",
+  "Mean_age",
+  "Percentage_minority",
+  "Percentage_partner",
+  "High_education",
+  "TP_assessments",
+  "N_trajectories",
+  "Trauma_TP1",
+  "TP1_TPX",
+  "Trauma_TPX",
+  "Entropy",
+  "Grolts",
+  "Sample_Size_100" # unit = 100 participants
+)
+
+cat_vars <- list(
+  list(var="Diagnostic_DSM",     keep=c("4","5"),                 ref="4"),
+  list(var="Occupational_trauma",keep=c("No","Yes"),              ref="No"),
+  list(var="Developmental_age",  keep=c("Adult","Youth"),         ref="Adult"),
+  list(var="Location",           keep=NULL,                       ref=NULL),
+  list(var="Location_US",        keep=NULL,                       ref="Non-US"),
+  list(var="Trajectory_analysis",keep=NULL,                       ref=NULL),
+  list(var="Scale_moderator",    keep=c("Interview","Self"),      ref="Interview"),
+  list(var="Trauma_exposure",    keep=c("Inter","Non"),           ref="Inter"),
+  list(var="Trauma_type",        keep=c("Combat","Natural","Injury"), ref="Combat"),
+  list(var="Military",           keep=NULL,                       ref="No"),
+  list(var="Discrete",           keep=c("No","Yes"),              ref="No"),
+  list(var="Health_First",       keep=c("Yes","No"),              ref="Yes")
+)
+
+# Consistent optimizer for all fits
+ctrl <- glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
+
+# Utility to add Success/Failure columns for a given trajectory
+add_binom_cols <- function(data, success_col = "Low_n", denom_col = "Sample_Size") {
+  stopifnot(success_col %in% names(data), denom_col %in% names(data))
+  data %>%
+    mutate(
+      Success = .data[[success_col]],
+      Failure = .data[[denom_col]] - Success
+    )
+}
+
+#fit model for one predictor and return the key stats
+fit_cont <- function(data, var, success_col = "Low_n", denom_col = "Sample_Size") {
+  d <- data %>%
+    filter(!is.na(.data[[var]])) %>%
+    add_binom_cols(success_col = success_col, denom_col = denom_col)
+
+  fml <- as.formula(paste0("cbind(Success, Failure) ~ ", var, " + (1 | Study)"))
+  m <- glmer(fml, data = d, family = binomial, control = ctrl)
+
+  coefs <- summary(m)$coefficients
+  b0 <- unname(fixef(m)["(Intercept)"])
+  b1 <- unname(fixef(m)[var])
+  p0 <- plogis(b0)
+
+  p_col <- intersect(colnames(coefs), c("Pr(>|z|)", "Pr(>|t|)", "Pr(>|Chisq|)"))
+  pval  <- if (length(p_col)) unname(coefs[var, p_col[1]]) else NA_real_
+
+  tibble(
+    trajectory = sub("_n$", "", success_col),
+    predictor  = var,
+    Samples    = nobs(m),
+    prevalence_at_0_pct        = 100 * p0,
+    slope                      = b1,
+    marginal_delta_pp_per_unit = b1 * p0 * (1 - p0) * 100,
+    p_value                    = pval
+  )
+}
+
+# Fit one categorical moderator and return prevalence by level + Δ vs ref (pp) + p-values
+fit_cat <- function(data, var, keep = NULL, ref = NULL,
+                    success_col = "Low_n", denom_col = "Sample_Size") {
+  stopifnot(var %in% names(data))
+
+  d <- data %>%
+    filter(!is.na(.data[[var]])) %>%
+    { if (!is.null(keep)) filter(., .data[[var]] %in% keep) else . } %>%
+    mutate(
+      !!var := factor(.data[[var]]),
+      !!var := if (!is.null(ref) && ref %in% levels(.data[[var]]))
+                 fct_relevel(.data[[var]], ref)
+               else fct_drop(.data[[var]])
+    ) %>%
+    add_binom_cols(success_col = success_col, denom_col = denom_col)
+
+  if (nlevels(d[[var]]) < 2) return(tibble())  # nothing to compare
+
+  fml <- as.formula(paste0("cbind(Success, Failure) ~ ", var, " + (1 | Study)"))
+  m <- glmer(fml, data = d, family = binomial, control = ctrl)
+
+  fe <- fixef(m)
+  b0 <- unname(fe["(Intercept)"])
+  lvls <- levels(d[[var]])
+
+  # baseline = first level
+  add <- sapply(lvls, function(L) {
+    nm <- paste0(var, L)                 # e.g., "Trauma_typeNatural"
+    if (nm %in% names(fe)) fe[[nm]] else 0
+  })
+
+  s <- summary(m)$coefficients
+  pcol <- intersect(colnames(s), c("Pr(>|z|)", "Pr(>|t|)", "Pr(>|Chisq|)"))
+  pvals <- sapply(lvls, function(L) {
+    nm <- paste0(var, L)
+    if (nm %in% rownames(s)) unname(s[nm, pcol[1]]) else NA_real_  # ref has NA
+  })
+
+  p <- plogis(b0 + add)
+  p_ref <- p[1]
+
+  tibble(
+    trajectory      = sub("_n$", "", success_col),
+    moderator       = var,
+    n               = nobs(m),               # Samples (k)
+    ref_level       = lvls[1],
+    level           = lvls,
+    prevalence_pct  = 100 * p,
+    diff_vs_ref_pp  = 100 * (p - p_ref),
+    p_value         = pvals
+  )
+}
+```
+
+## Tables Setup
+
+```{r mods-setup-tables}
+# helpers for p formatting
+fmt_p <- function(p) ifelse(is.na(p), "", ifelse(p < .001, "< .001", sprintf("%.3f", p)))
+sig   <- function(p) dplyr::case_when(is.na(p) ~ "", p < .001 ~ "***", p < .01 ~ "**", p < .05 ~ "*", TRUE ~ "")
+
+# Moderator labels for tables
+mod_labels <- c(
+  Percentage_women    = "Percentage of women",
+  Mean_age            = "Mean age",
+  Percentage_minority = "Minorities (%)",
+  Percentage_partner  = "Having a partner (%)",
+  High_education      = "Education (%)",
+  TP_assessments      = "Time point PTSD assessments",
+  N_trajectories      = "Number of trajectories",
+  Trauma_TP1          = "Time between trauma and first assessment (months)",
+  TP1_TPX             = "Time span of the study (months)",
+  Trauma_TPX          = "Time between trauma and last assessment (months)",
+  Entropy             = "Entropy",
+  Grolts              = "Quality score",
+  Sample_Size_100     = "Sample size / 100",
+  Diagnostic_DSM      = "Diagnostic Criteria",
+  Occupational_trauma = "Occupational trauma",
+  Developmental_age   = "Developmental age",
+  Location            = "Country income",
+  Location_US         = "US vs Non-US",
+  Trajectory_analysis = "LGMM vs LCGA",
+  Scale_moderator     = "PTSD symptom assessment",
+  Trauma_exposure     = "Trauma exposure",
+  Trauma_type         = "Trauma nature",
+  Military            = "Civilian vs Military",
+  Discrete            = "Discrete vs non-discrete trauma",
+  Health_First        = "HP/First responders vs other"
+)
+
+# continuous variable labels for tables
+mod_levels <- unname(mod_labels)
+delta_col  <- "Marginal Δ"  # use literal Δ; save file as UTF-8
+
+# categorical moderator level labels for tables
+level_labels <- list(
+  Diagnostic_DSM      = c(`4` = "DSM-IV", `5` = "DSM-5"),
+  Occupational_trauma = c(No = "No", Yes = "Yes"),
+  Developmental_age   = c(Adult = "Adult", Youth = "Youth"),
+  Location            = c(
+    "High income countries" = "High income countries",
+    "High-income countries" = "High income countries",
+    "High"                  = "High income countries",
+    "HIC"                   = "High income countries",
+    "Mid-, low- income"     = "Mid-, low- income",
+    "Mid/low income"        = "Mid-, low- income",
+    "LMIC"                  = "Mid-, low- income"
+  ),
+  Location_US         = c(`Non-US` = "Non-US", US = "US"),
+
+  Trajectory_analysis = c(LCGA = "LCGA", LGMM = "LGMM"),
+  Scale_moderator     = c(Interview = "Interview", Self = "Self-reported scale"),
+  Trauma_exposure     = c(Inter = "Interpersonal trauma", Non = "Non-interpersonal trauma"),
+  Trauma_type         = c(Combat = "Combat", Injury = "Injury", Natural = "Natural disaster"),
+  Military            = c(No = "Civilian", Yes = "Military"),
+  Discrete            = c(No = "Non-discrete", Yes = "Discrete"),
+  Health_First        = c(Yes = "HP/First responder", No = "Other")
+)
+
+# Build a lookup tibble we can join onto both ref and comparison
+lvl_map <- purrr::imap_dfr(level_labels, ~tibble::tibble(
+  moderator = .y,
+  orig      = names(.x),
+  pretty    = unname(.x)
+))
+```
 
 ## 🚀 Low Symptom Trajectory
 
 ```{r low-moderators-setup}
 
-df_low <- df_moderation %>%
+df_Low <- df_moderation %>%
   filter(!is.na(Low_percentage))
 
-# Ensure Low_percentage is numeric
-df_low$Low_percentage <- as.numeric(df_low$Low_percentage)
-
 # Calculate Low_n as (percentage / 100) * sample size
-df_low$Low_n <-
-  round((df_low$Low_percentage / 100) * df_low$Sample_Size)
-
-
+df_Low$Low_n <-
+  round((df_Low$Low_percentage / 100) * df_Low$Sample_Size)
 ```
+
 ### Descriptives
 
 We provide additional descriptives based on the Low trajectory variable, using the full dataset.
@@ -93,1213 +293,384 @@ We provide additional descriptives based on the Low trajectory variable, using t
 ```{r Low-descriptives}
 
 # Total number of individuals classified as Low (ignoring missingness in other variables)
-total_Low_n <- sum(df_low$Low_n, na.rm = TRUE)
+total_Low_n <- sum(df_Low$Low_n, na.rm = TRUE)
 
-# Number of unique studies (assumes a column Study exists)
-unique_studies <- length(unique(df_low$Study))
+# Number of unique samples
+unique_samples <- length(unique(df_Low$Study))
 
 # Display as a table
 additional_info <- data.frame(
-  Description = c("Total number of individuals in Low trajectory", "Number of unique studies"),
-  Value = format(c(total_Low_n, unique_studies), big.mark = ",")
+  Description = c("Total number of individuals in Low trajectory", "Number of unique samples"),
+  Value = format(c(total_Low_n, unique_samples), big.mark = ",")
 )
 
 knitr::kable(additional_info, caption = "Additional Descriptives for Low Trajectory Analysis")
 ```
+
 ### Continuous moderators
 
-#### Percentage of women
-```{r Low-mods-cont-percentage-women}
-model <- glmer(cbind(Low_n, Sample_Size - Low_n) ~ 
-                 Percentage_women + (1 | Study),
-               data = subset(df_low, !is.na(Percentage_women)), family = binomial)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Estimated prevalence at Percentage_women = 0
+```{r Low-mods-cont}
+fit_cont_Low <- \(data, var) fit_cont(data, var, success_col = "Low_n", denom_col = "Sample_Size")
 
-b0 <- fixef(model)["(Intercept)"]
-b1 <- fixef(model)["Percentage_women"]
-p0 <- plogis(b0)
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Marginal Delta:", round(delta, 2))
-```
+fits_cont_Low <- map_dfr(cont_vars, ~fit_cont_Low(df_Low, .x)) %>%
+  mutate(across(where(is.numeric), ~round(.x, 3)))
 
-#### Mean age
-```{r Low-mods-cont-mean-age}
-model <- glmer(
-  cbind(Low_n, Sample_Size - Low_n) ~ Mean_age + (1 | Study),
-  data = subset(df_low, !is.na(Mean_age)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Mean_age"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
+# table rendering
+tbl <- fits_cont_Low %>%
+  mutate(
+    Predictor = dplyr::recode(predictor, !!!mod_labels, .default = predictor),
+    Predictor = factor(Predictor, levels = mod_levels),
+    `Prevalence (0%)` = sprintf("%.1f%%", prevalence_at_0_pct),
+    !!delta_col := marginal_delta_pp_per_unit,
+    `P-value` = paste0(fmt_p(p_value), ifelse(is.na(p_value), "", paste0(" ", sig(p_value)))),
+    Slope = slope
+  ) %>%
+  select(Predictor, Samples, `Prevalence (0%)`, Slope, dplyr::all_of(delta_col),`P-value`) %>%
+  arrange(Predictor)
 
-#### Percentage of minorities
-```{r Low-mods-cont-percentage-minority}
-model <- glmer(
-  cbind(Low_n, Sample_Size - Low_n) ~ Percentage_minority + (1 | Study),
-  data = subset(df_low, !is.na(Percentage_minority)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Percentage_minority"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
+# ensure the table and its column names are UTF-8
+tbl_utf8 <- tbl
+names(tbl_utf8) <- enc2utf8(names(tbl_utf8))
+tbl_utf8 <- dplyr::mutate(tbl_utf8, dplyr::across(where(is.character), enc2utf8))
 
-#### Partner
-```{r Low-mods-cont-partner}
-model <- glmer(
-  cbind(Low_n, Sample_Size - Low_n) ~ Percentage_partner + (1 | Study),
-  data = subset(df_low, !is.na(Percentage_partner)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Partner"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at reference:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### High education
-```{r Low-mods-cont-high-education}
-model <- glmer(
-  cbind(Low_n, Sample_Size - Low_n) ~ High_education + (1 | Study),
-  data = subset(df_low, !is.na(High_education)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["High_education"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at reference:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Number of timepoints
-```{r Low-mods-cont-num-timepoints}
-model <- glmer(
-  cbind(Low_n, Sample_Size - Low_n) ~ TP_assessments + (1 | Study),
-  data = subset(df_low, !is.na(TP_assessments)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["TP_assessments"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Number of trajectories
-```{r Low-mods-cont-num-trajectories}
-model <- glmer(
-  cbind(Low_n, Sample_Size - Low_n) ~ N_trajectories + (1 | Study),
-  data = subset(df_low, !is.na(N_trajectories)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["N_trajectories"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Time between trauma and T1
-```{r Low-mods-cont-trauma-to-t1}
-model <- glmer(
-  cbind(Low_n, Sample_Size - Low_n) ~ Trauma_TP1 + (1 | Study),
-  data = subset(df_low, !is.na(Trauma_TP1)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Trauma_TP1"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Time span of study (TP1 → last)
-```{r Low-mods-cont-time-span}
-model <- glmer(
-  cbind(Low_n, Sample_Size - Low_n) ~ TP1_TPX + (1 | Study),
-  data = subset(df_low, !is.na(TP1_TPX)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["TP1_TPX"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Time between trauma and last assessment
-```{r Low-mods-cont-trauma-to-last}
-model <- glmer(
-  cbind(Low_n, Sample_Size - Low_n) ~ Trauma_TPX + (1 | Study),
-  data = subset(df_low, !is.na(Trauma_TPX)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Trauma_TPX"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Sample size (per 100)
-```{r Low-mods-cont-sample-size}
-df_low$Sample_Size_100 <- df_low$Sample_Size / 100
-
-model <- glmer(
-  cbind(Low_n, Sample_Size - Low_n) ~ Sample_Size_100 + (1 | Study),
-  data = subset(df_low, !is.na(Sample_Size_100)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Sample_Size_100"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per 100 participants):", round(delta, 2), "\n")
-```
-
-#### Entropy
-```{r Low-mods-cont-entropy}
-model <- glmer(
-  cbind(Low_n, Sample_Size - Low_n) ~ Entropy + (1 | Study),
-  data = subset(df_low, !is.na(Entropy)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Entropy"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Grolts
-```{r Low-mods-cont-grolts}
-model <- glmer(
-  cbind(Low_n, Sample_Size - Low_n) ~ Grolts + (1 | Study),
-  data = subset(df_low, !is.na(Grolts)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Grolts"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
+tbl_utf8 %>%
+  gt() %>%
+  cols_width(Predictor ~ px(220)) %>%
+  cols_align(align = "center", columns = -Predictor) %>%
+  cols_align(align = "left",   columns = Predictor) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels(columns = everything())
+  ) %>%
+  tab_options(table.width = pct(100))
 ```
 
 ### Categorical moderators
 
-#### DSM-5 vs DSM-IV
-```{r Low-mods-cat-dsm}
-model <- glmer(
-  cbind(Low_n, Sample_Size - Low_n) ~ factor(Diagnostic_DSM) + (1 | Study),
-  data = subset(df_low, Diagnostic_DSM %in% c("4", "5")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # DSM-IV (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Diagnostic_DSM)5"])  # DSM-5
-```
+```{r Low-mods-cat}
+fit_cat_Low <- \(data, var, keep=NULL, ref=NULL)
+  fit_cat(data, var, keep, ref, success_col = "Low_n", denom_col = "Sample_Size")
 
-#### Occupational trauma
-```{r Low-mods-cat-occupational}
-model <- glmer(
-  cbind(Low_n, Sample_Size - Low_n) ~ factor(Occupational_trauma) + (1 | Study),
-  data = subset(df_low, Occupational_trauma %in% c("Yes", "No")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
+fits_cat_Low <- purrr::map_dfr(
+  cat_vars, \(spec) do.call(fit_cat_Low, c(list(data = df_Low), spec))
 )
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # No (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Occupational_trauma)Yes"])
-```
 
-#### Developmental age (Adult vs Youth)
-```{r Low-mods-cat-developmental-age}
-model <- glmer(
-  cbind(Low_n, Sample_Size - Low_n) ~ factor(Developmental_age) + (1 | Study),
-  data = subset(df_low, Developmental_age %in% c("Adult", "Youth")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Adult (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Developmental_age)Youth"])
-```
+# table
+## set reference level
+ref_prev_low <- fits_cat_Low %>%
+  dplyr::filter(level == ref_level) %>%
+  dplyr::select(moderator, ref_level, ref_prev = prevalence_pct)
 
-#### Country income (Location)
-```{r Low-mods-cat-country-income}
-model <- glmer(
-  cbind(Low_n, Sample_Size - Low_n) ~ factor(Location) + (1 | Study),
-  data = subset(df_low, !is.na(Location)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Reference group
-```
+# setup table
+Low_cat_table <- fits_cat_Low %>%
+  # drop ref–ref rows
+  dplyr::filter(level != ref_level) %>%
+  # join the correct ref prevalence for LOW
+  dplyr::left_join(ref_prev_low, by = c("moderator", "ref_level")) %>%
+  # pretty names for ref and comparison
+  dplyr::left_join(lvl_map, by = c("moderator", "ref_level" = "orig")) %>%
+  dplyr::rename(pretty_ref = pretty) %>%
+  dplyr::left_join(lvl_map, by = c("moderator", "level" = "orig")) %>%
+  dplyr::rename(pretty_cmp = pretty) %>%
+  dplyr::mutate(
+    Predictor                 = dplyr::recode(moderator, !!!mod_labels, .default = moderator),
+    `Samples (k)`             = n,
+    `Reference (Name)`        = dplyr::coalesce(pretty_ref, ref_level),
+    `Reference (Prevalence)`  = sprintf("%.1f%%", ref_prev),
+    `Comparison (Name)`       = dplyr::coalesce(pretty_cmp, level),
+    `Comparison (Prevalence)` = sprintf("%.1f%%", prevalence_pct),
+    !!delta_col               := round(diff_vs_ref_pp, 2),  # <-- key change
+    `p-value`                 = paste0(fmt_p(p_value), ifelse(is.na(p_value), "", paste0(" ", sig(p_value))))
+  ) %>%
+  dplyr::select(
+    Predictor, `Samples (k)`, `Reference (Name)`, `Reference (Prevalence)`,
+    `Comparison (Name)`, `Comparison (Prevalence)`, dplyr::all_of(delta_col), `p-value`
+  ) %>%
+  dplyr::arrange(Predictor, `Comparison (Name)`)
 
-#### US vs non-US
-```{r Low-mods-cat-us}
-model <- glmer(
-  cbind(Low_n, Sample_Size - Low_n) ~ factor(Location_US) + (1 | Study),
-  data = subset(df_low, !is.na(Location_US)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Non-US (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Location_US)US"])
-```
-
-#### LGMM vs LCGA
-```{r Low-mods-cat-lgmm-lcga}
-model <- glmer(
-  cbind(Low_n, Sample_Size - Low_n) ~ factor(Trajectory_analysis) + (1 | Study),
-  data = subset(df_low, !is.na(Trajectory_analysis)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Reference model
-```
-
-#### PTSD assessment: Interview vs Self
-```{r Low-mods-cat-interview-self}
-model <- glmer(
-  cbind(Low_n, Sample_Size - Low_n) ~ factor(Scale_moderator) + (1 | Study),
-  data = subset(df_low, Scale_moderator %in% c("Interview", "Self")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Interview (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Scale_moderator)Self"])
-```
-
-#### Interpersonal vs non-interpersonal trauma
-```{r Low-mods-cat-interpersonal}
-model <- glmer(
-  cbind(Low_n, Sample_Size - Low_n) ~ factor(Trauma_exposure) + (1 | Study),
-  data = subset(df_low, Trauma_exposure %in% c("Inter", "Non")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Interpersonal (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Trauma_exposure)Non"])
-```
-
-#### Trauma type: Combat, Natural, Injury
-```{r Low-mods-cat-trauma-type}
-model <- glmer(
-  cbind(Low_n, Sample_Size - Low_n) ~ factor(Trauma_type) + (1 | Study),
-  data = subset(df_low, Trauma_type %in% c("Combat", "Natural", "Injury")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Reference trauma type
-if ("factor(Trauma_type)Injury" %in% names(fixef(model))) {
-  plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Trauma_type)Injury"])
-}
-if ("factor(Trauma_type)Natural" %in% names(fixef(model))) {
-  plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Trauma_type)Natural"])
-}
-```
-
-#### Military population
-```{r Low-mods-cat-military}
-model <- glmer(
-  cbind(Low_n, Sample_Size - Low_n) ~ factor(Military) + (1 | Study),
-  data = subset(df_low, !is.na(Military)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # No (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Military)Yes"])
-```
-
-#### Discrete
-```{r Low-mods-cat-discrete}
-model <- glmer(
-  cbind(Low_n, Sample_Size - Low_n) ~ factor(Discrete) + (1 | Study),
-  data = subset(df_low, Discrete %in% c("Yes", "No")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Discrete)Yes"])
-```
-
-#### Health workers + First responders vs other
-```{r Low-mods-cat-health-first}
-df_low$Health_First <- relevel(factor(df_low$Health_First), ref = "Yes")
-model <- glmer(
-  cbind(Low_n, Sample_Size - Low_n) ~ factor(Health_First) + (1 | Study),
-  data = subset(df_low, Health_First %in% c("Yes", "No")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Yes (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Health_First)No"])
+# Render
+Low_cat_table %>%
+  gt() %>%
+  cols_width(Predictor ~ px(110)) %>%
+  cols_align(align = "left",   columns = Predictor) %>%
+  cols_align(align = "center", columns = -Predictor) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = list(
+      cells_column_labels(columns = everything())
+    )
+  ) %>%
+  tab_options(
+    data_row.padding = px(4),
+    column_labels.padding = px(6),
+    table.font.size = px(13)
+  )
 ```
 
 ## 🌿 Decreasing Symptom Trajectory
 
 ```{r Decreasing-moderators-setup}
-
 df_Decreasing <- df_moderation %>%
   filter(!is.na(Decreasing_percentage))
-
-# Ensure Decreasing_percentage is numeric
-df_Decreasing$Decreasing_percentage <- as.numeric(df_Decreasing$Decreasing_percentage)
 
 # Calculate Decreasing_n as (percentage / 100) * sample size
 df_Decreasing$Decreasing_n <-
   round((df_Decreasing$Decreasing_percentage / 100) * df_Decreasing$Sample_Size)
-
-
 ```
+
 ### Descriptives
 
 We provide additional descriptives based on the Decreasing trajectory variable, using the full dataset.
 
 ```{r Decreasing-descriptives}
-
 # Total number of individuals classified as Decreasing (ignoring missingness in other variables)
 total_Decreasing_n <- sum(df_Decreasing$Decreasing_n, na.rm = TRUE)
 
-# Number of unique studies (assumes a column Study exists)
-unique_studies <- length(unique(df_Decreasing$Study))
+# Number of unique samples
+unique_samples <- length(unique(df_Decreasing$Study))
 
 # Display as a table
 additional_info <- data.frame(
-  Description = c("Total number of individuals in Decreasing trajectory", "Number of unique studies"),
-  Value = format(c(total_Decreasing_n, unique_studies), big.mark = ",")
+  Description = c("Total number of individuals in Decreasing trajectory", "Number of unique samples"),
+  Value = format(c(total_Decreasing_n, unique_samples), big.mark = ",")
 )
 
 knitr::kable(additional_info, caption = "Additional Descriptives for Decreasing Trajectory Analysis")
 ```
+
 ### Continuous moderators
 
-#### Percentage of women
-```{r Decreasing-mods-cont-percentage-women}
-model <- glmer(cbind(Decreasing_n, Sample_Size - Decreasing_n) ~ 
-                 Percentage_women + (1 | Study),
-               data = subset(df_Decreasing, !is.na(Percentage_women)), family = binomial)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Estimated prevalence at Percentage_women = 0
+```{r Decreasing-mods-cont}
+fit_cont_Decreasing <- \(data, var) fit_cont(data, var, success_col = "Decreasing_n", denom_col = "Sample_Size")
 
-b0 <- fixef(model)["(Intercept)"]
-b1 <- fixef(model)["Percentage_women"]
-p0 <- plogis(b0)
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Marginal Delta:", round(delta, 2))
-```
+fits_cont_Decreasing <- map_dfr(cont_vars, ~fit_cont_Decreasing(df_Decreasing, .x)) %>%
+  mutate(across(where(is.numeric), ~round(.x, 3)))
 
-#### Mean age
-```{r Decreasing-mods-cont-mean-age}
-model <- glmer(
-  cbind(Decreasing_n, Sample_Size - Decreasing_n) ~ Mean_age + (1 | Study),
-  data = subset(df_Decreasing, !is.na(Mean_age)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Mean_age"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
+# table 
+# build table
+tbl <- fits_cont_Decreasing %>%
+  mutate(
+    Predictor = dplyr::recode(predictor, !!!mod_labels, .default = predictor),
+    Predictor = factor(Predictor, levels = mod_levels),
+    `Prevalence (0%)` = sprintf("%.1f%%", prevalence_at_0_pct),
+    !!delta_col := marginal_delta_pp_per_unit,
+    `P-value` = paste0(fmt_p(p_value), ifelse(is.na(p_value), "", paste0(" ", sig(p_value)))),
+    Slope = slope
+  ) %>%
+  select(Predictor, Samples, `Prevalence (0%)`, Slope, dplyr::all_of(delta_col),`P-value`) %>%
+  arrange(Predictor)
 
-#### Percentage of minorities
-```{r Decreasing-mods-cont-percentage-minority}
-model <- glmer(
-  cbind(Decreasing_n, Sample_Size - Decreasing_n) ~ Percentage_minority + (1 | Study),
-  data = subset(df_Decreasing, !is.na(Percentage_minority)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Percentage_minority"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
+# ensure the table and its column names are UTF-8
+tbl_utf8 <- tbl
+names(tbl_utf8) <- enc2utf8(names(tbl_utf8))
+tbl_utf8 <- dplyr::mutate(tbl_utf8, dplyr::across(where(is.character), enc2utf8))
 
-#### Partner
-```{r Decreasing-mods-cont-partner}
-model <- glmer(
-  cbind(Decreasing_n, Sample_Size - Decreasing_n) ~ Percentage_partner + (1 | Study),
-  data = subset(df_Decreasing, !is.na(Percentage_partner)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Partner"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at reference:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### High education
-```{r Decreasing-mods-cont-high-education}
-model <- glmer(
-  cbind(Decreasing_n, Sample_Size - Decreasing_n) ~ High_education + (1 | Study),
-  data = subset(df_Decreasing, !is.na(High_education)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["High_education"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at reference:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Number of timepoints
-```{r Decreasing-mods-cont-num-timepoints}
-model <- glmer(
-  cbind(Decreasing_n, Sample_Size - Decreasing_n) ~ TP_assessments + (1 | Study),
-  data = subset(df_Decreasing, !is.na(TP_assessments)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["TP_assessments"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Number of trajectories
-```{r Decreasing-mods-cont-num-trajectories}
-model <- glmer(
-  cbind(Decreasing_n, Sample_Size - Decreasing_n) ~ N_trajectories + (1 | Study),
-  data = subset(df_Decreasing, !is.na(N_trajectories)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["N_trajectories"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Time between trauma and T1
-```{r Decreasing-mods-cont-trauma-to-t1}
-model <- glmer(
-  cbind(Decreasing_n, Sample_Size - Decreasing_n) ~ Trauma_TP1 + (1 | Study),
-  data = subset(df_Decreasing, !is.na(Trauma_TP1)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Trauma_TP1"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Time span of study (TP1 → last)
-```{r Decreasing-mods-cont-time-span}
-model <- glmer(
-  cbind(Decreasing_n, Sample_Size - Decreasing_n) ~ TP1_TPX + (1 | Study),
-  data = subset(df_Decreasing, !is.na(TP1_TPX)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["TP1_TPX"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Time between trauma and last assessment
-```{r Decreasing-mods-cont-trauma-to-last}
-model <- glmer(
-  cbind(Decreasing_n, Sample_Size - Decreasing_n) ~ Trauma_TPX + (1 | Study),
-  data = subset(df_Decreasing, !is.na(Trauma_TPX)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Trauma_TPX"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Sample size (per 100)
-```{r Decreasing-mods-cont-sample-size}
-df_Decreasing$Sample_Size_100 <- df_Decreasing$Sample_Size / 100
-
-model <- glmer(
-  cbind(Decreasing_n, Sample_Size - Decreasing_n) ~ Sample_Size_100 + (1 | Study),
-  data = subset(df_Decreasing, !is.na(Sample_Size_100)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Sample_Size_100"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per 100 participants):", round(delta, 2), "\n")
-```
-
-#### Entropy
-```{r Decreasing-mods-cont-entropy}
-model <- glmer(
-  cbind(Decreasing_n, Sample_Size - Decreasing_n) ~ Entropy + (1 | Study),
-  data = subset(df_Decreasing, !is.na(Entropy)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Entropy"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Grolts
-```{r Decreasing-mods-cont-grolts}
-model <- glmer(
-  cbind(Decreasing_n, Sample_Size - Decreasing_n) ~ Grolts + (1 | Study),
-  data = subset(df_Decreasing, !is.na(Grolts)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Grolts"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
+# render
+tbl_utf8 %>%
+  gt() %>%
+  cols_width(Predictor ~ px(220)) %>%
+  cols_align(align = "center", columns = -Predictor) %>%
+  cols_align(align = "left",   columns = Predictor) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels(columns = everything())
+  ) %>%
+  tab_options(table.width = pct(100))
 ```
 
 ### Categorical moderators
 
-#### DSM-5 vs DSM-IV
-```{r Decreasing-mods-cat-dsm}
-model <- glmer(
-  cbind(Decreasing_n, Sample_Size - Decreasing_n) ~ factor(Diagnostic_DSM) + (1 | Study),
-  data = subset(df_Decreasing, Diagnostic_DSM %in% c("4", "5")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # DSM-IV (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Diagnostic_DSM)5"])  # DSM-5
-```
+```{r Decreasing-mods-cat}
+fit_cat_Decreasing <- \(data, var, keep=NULL, ref=NULL)
+  fit_cat(data, var, keep, ref, success_col = "Decreasing_n", denom_col = "Sample_Size")
 
-#### Occupational trauma
-```{r Decreasing-mods-cat-occupational}
-model <- glmer(
-  cbind(Decreasing_n, Sample_Size - Decreasing_n) ~ factor(Occupational_trauma) + (1 | Study),
-  data = subset(df_Decreasing, Occupational_trauma %in% c("Yes", "No")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
+fits_cat_Decreasing <- purrr::map_dfr(
+  cat_vars, \(spec) do.call(fit_cat_Decreasing, c(list(data = df_Decreasing), spec))
 )
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # No (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Occupational_trauma)Yes"])
-```
 
-#### Developmental age (Adult vs Youth)
-```{r Decreasing-mods-cat-developmental-age}
-model <- glmer(
-  cbind(Decreasing_n, Sample_Size - Decreasing_n) ~ factor(Developmental_age) + (1 | Study),
-  data = subset(df_Decreasing, Developmental_age %in% c("Adult", "Youth")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Adult (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Developmental_age)Youth"])
-```
+# table
+## build table 
+ref_prev_Decreasing <- fits_cat_Decreasing %>%
+  dplyr::filter(level == ref_level) %>%
+  dplyr::select(moderator, ref_level, ref_prev = prevalence_pct)
 
-#### Country income (Location)
-```{r Decreasing-mods-cat-country-income}
-model <- glmer(
-  cbind(Decreasing_n, Sample_Size - Decreasing_n) ~ factor(Location) + (1 | Study),
-  data = subset(df_Decreasing, !is.na(Location)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Reference group
-```
+Decreasing_cat_table <- fits_cat_Decreasing %>%
+  # drop ref–ref rows
+  dplyr::filter(level != ref_level) %>%
+  # join the correct ref prevalence for Decreasing
+  dplyr::left_join(ref_prev_Decreasing, by = c("moderator", "ref_level")) %>%
+  # pretty names for ref and comparison
+  dplyr::left_join(lvl_map, by = c("moderator", "ref_level" = "orig")) %>%
+  dplyr::rename(pretty_ref = pretty) %>%
+  dplyr::left_join(lvl_map, by = c("moderator", "level" = "orig")) %>%
+  dplyr::rename(pretty_cmp = pretty) %>%
+  dplyr::mutate(
+    Predictor                 = dplyr::recode(moderator, !!!mod_labels, .default = moderator),
+    `Samples (k)`             = n,
+    `Reference (Name)`        = dplyr::coalesce(pretty_ref, ref_level),
+    `Reference (Prevalence)`  = sprintf("%.1f%%", ref_prev),
+    `Comparison (Name)`       = dplyr::coalesce(pretty_cmp, level),
+    `Comparison (Prevalence)` = sprintf("%.1f%%", prevalence_pct),
+    !!delta_col               := round(diff_vs_ref_pp, 2),  # <-- key change
+    `p-value`                 = paste0(fmt_p(p_value), ifelse(is.na(p_value), "", paste0(" ", sig(p_value))))
+  ) %>%
+  dplyr::select(
+    Predictor, `Samples (k)`, `Reference (Name)`, `Reference (Prevalence)`,
+    `Comparison (Name)`, `Comparison (Prevalence)`, dplyr::all_of(delta_col), `p-value`
+  ) %>%
+  dplyr::arrange(Predictor, `Comparison (Name)`)
 
-#### US vs non-US
-```{r Decreasing-mods-cat-us}
-model <- glmer(
-  cbind(Decreasing_n, Sample_Size - Decreasing_n) ~ factor(Location_US) + (1 | Study),
-  data = subset(df_Decreasing, !is.na(Location_US)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Non-US (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Location_US)US"])
-```
-
-#### LGMM vs LCGA
-```{r Decreasing-mods-cat-lgmm-lcga}
-model <- glmer(
-  cbind(Decreasing_n, Sample_Size - Decreasing_n) ~ factor(Trajectory_analysis) + (1 | Study),
-  data = subset(df_Decreasing, !is.na(Trajectory_analysis)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Reference model
-```
-
-#### PTSD assessment: Interview vs Self
-```{r Decreasing-mods-cat-interview-self}
-model <- glmer(
-  cbind(Decreasing_n, Sample_Size - Decreasing_n) ~ factor(Scale_moderator) + (1 | Study),
-  data = subset(df_Decreasing, Scale_moderator %in% c("Interview", "Self")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Interview (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Scale_moderator)Self"])
-```
-
-#### Interpersonal vs non-interpersonal trauma
-```{r Decreasing-mods-cat-interpersonal}
-model <- glmer(
-  cbind(Decreasing_n, Sample_Size - Decreasing_n) ~ factor(Trauma_exposure) + (1 | Study),
-  data = subset(df_Decreasing, Trauma_exposure %in% c("Inter", "Non")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Interpersonal (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Trauma_exposure)Non"])
-```
-
-#### Trauma type: Combat, Natural, Injury
-```{r Decreasing-mods-cat-trauma-type}
-model <- glmer(
-  cbind(Decreasing_n, Sample_Size - Decreasing_n) ~ factor(Trauma_type) + (1 | Study),
-  data = subset(df_Decreasing, Trauma_type %in% c("Combat", "Natural", "Injury")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Reference trauma type
-if ("factor(Trauma_type)Injury" %in% names(fixef(model))) {
-  plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Trauma_type)Injury"])
-}
-if ("factor(Trauma_type)Natural" %in% names(fixef(model))) {
-  plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Trauma_type)Natural"])
-}
-```
-
-#### Military population
-```{r Decreasing-mods-cat-military}
-model <- glmer(
-  cbind(Decreasing_n, Sample_Size - Decreasing_n) ~ factor(Military) + (1 | Study),
-  data = subset(df_Decreasing, !is.na(Military)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # No (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Military)Yes"])
-```
-
-#### Discrete
-```{r Decreasing-mods-cat-discrete}
-model <- glmer(
-  cbind(Decreasing_n, Sample_Size - Decreasing_n) ~ factor(Discrete) + (1 | Study),
-  data = subset(df_Decreasing, Discrete %in% c("Yes", "No")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Discrete)Yes"])
-```
-
-#### Health workers + First responders vs other
-```{r Decreasing-mods-cat-health-first}
-df_Decreasing$Health_First <- relevel(factor(df_Decreasing$Health_First), ref = "Yes")
-model <- glmer(
-  cbind(Decreasing_n, Sample_Size - Decreasing_n) ~ factor(Health_First) + (1 | Study),
-  data = subset(df_Decreasing, Health_First %in% c("Yes", "No")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Yes (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Health_First)No"])
+## Render
+Decreasing_cat_table %>%
+  gt() %>%
+  cols_width(Predictor ~ px(110)) %>%
+  cols_align(align = "left",   columns = Predictor) %>%
+  cols_align(align = "center", columns = -Predictor) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = list(
+      cells_column_labels(columns = everything())
+    )
+  ) %>%
+  tab_options(
+    data_row.padding = px(4),
+    column_labels.padding = px(6),
+    table.font.size = px(13)
+  )
 ```
 
 ## ⚠️ Increasing Symptom Trajectory
 
 ```{r Increasing-moderators-setup}
-
 df_Increasing <- df_moderation %>%
   filter(!is.na(Increasing_percentage))
-
-# Ensure Increasing_percentage is numeric
-df_Increasing$Increasing_percentage <- as.numeric(df_Increasing$Increasing_percentage)
 
 # Calculate Increasing_n as (percentage / 100) * sample size
 df_Increasing$Increasing_n <-
   round((df_Increasing$Increasing_percentage / 100) * df_Increasing$Sample_Size)
-
 ```
+
 ### Descriptives
 
 We provide additional descriptives based on the Increasing trajectory variable, using the full dataset.
 
 ```{r Increasing-descriptives}
-
 # Total number of individuals classified as Increasing (ignoring missingness in other variables)
 total_Increasing_n <- sum(df_Increasing$Increasing_n, na.rm = TRUE)
 
-# Number of unique studies (assumes a column Study exists)
-unique_studies <- length(unique(df_Increasing$Study))
+# Number of unique samples
+unique_samples <- length(unique(df_Increasing$Study))
 
 # Display as a table
 additional_info <- data.frame(
-  Description = c("Total number of individuals in Increasing trajectory", "Number of unique studies"),
-  Value = format(c(total_Increasing_n, unique_studies), big.mark = ",")
+  Description = c("Total number of individuals in Increasing trajectory", "Number of unique samples"),
+  Value = format(c(total_Increasing_n, unique_samples), big.mark = ",")
 )
 
 knitr::kable(additional_info, caption = "Additional Descriptives for Increasing Trajectory Analysis")
 ```
+
 ### Continuous moderators
 
-#### Percentage of women
-```{r Increasing-mods-cont-percentage-women}
-model <- glmer(cbind(Increasing_n, Sample_Size - Increasing_n) ~ 
-                 Percentage_women + (1 | Study),
-               data = subset(df_Increasing, !is.na(Percentage_women)), family = binomial)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Estimated prevalence at Percentage_women = 0
+```{r Increasing-mods-cont}
+fit_cont_Increasing <- \(data, var) fit_cont(data, var, success_col = "Increasing_n", denom_col = "Sample_Size")
 
-b0 <- fixef(model)["(Intercept)"]
-b1 <- fixef(model)["Percentage_women"]
-p0 <- plogis(b0)
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Marginal Delta:", round(delta, 2))
-```
+fits_cont_Increasing <- map_dfr(cont_vars, ~fit_cont_Increasing(df_Increasing, .x)) %>%
+  mutate(across(where(is.numeric), ~round(.x, 3)))
 
-#### Mean age
-```{r Increasing-mods-cont-mean-age}
-model <- glmer(
-  cbind(Increasing_n, Sample_Size - Increasing_n) ~ Mean_age + (1 | Study),
-  data = subset(df_Increasing, !is.na(Mean_age)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Mean_age"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
+# build table
+tbl <- fits_cont_Increasing %>%
+  mutate(
+    Predictor = dplyr::recode(predictor, !!!mod_labels, .default = predictor),
+    Predictor = factor(Predictor, levels = mod_levels),
+    `Prevalence (0%)` = sprintf("%.1f%%", prevalence_at_0_pct),
+    !!delta_col := marginal_delta_pp_per_unit,
+    `P-value` = paste0(fmt_p(p_value), ifelse(is.na(p_value), "", paste0(" ", sig(p_value)))),
+    Slope = slope
+  ) %>%
+  select(Predictor, Samples, `Prevalence (0%)`, Slope, dplyr::all_of(delta_col),`P-value`) %>%
+  arrange(Predictor)
 
-#### Percentage of minorities
-```{r Increasing-mods-cont-percentage-minority}
-model <- glmer(
-  cbind(Increasing_n, Sample_Size - Increasing_n) ~ Percentage_minority + (1 | Study),
-  data = subset(df_Increasing, !is.na(Percentage_minority)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Percentage_minority"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
+# ensure the table and its column names are UTF-8
+tbl_utf8 <- tbl
+names(tbl_utf8) <- enc2utf8(names(tbl_utf8))
+tbl_utf8 <- dplyr::mutate(tbl_utf8, dplyr::across(where(is.character), enc2utf8))
 
-#### Partner
-```{r Increasing-mods-cont-partner}
-model <- glmer(
-  cbind(Increasing_n, Sample_Size - Increasing_n) ~ Percentage_partner + (1 | Study),
-  data = subset(df_Increasing, !is.na(Percentage_partner)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Partner"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at reference:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### High education
-```{r Increasing-mods-cont-high-education}
-model <- glmer(
-  cbind(Increasing_n, Sample_Size - Increasing_n) ~ High_education + (1 | Study),
-  data = subset(df_Increasing, !is.na(High_education)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["High_education"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at reference:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Number of timepoints
-```{r Increasing-mods-cont-num-timepoints}
-model <- glmer(
-  cbind(Increasing_n, Sample_Size - Increasing_n) ~ TP_assessments + (1 | Study),
-  data = subset(df_Increasing, !is.na(TP_assessments)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["TP_assessments"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Number of trajectories
-```{r Increasing-mods-cont-num-trajectories}
-model <- glmer(
-  cbind(Increasing_n, Sample_Size - Increasing_n) ~ N_trajectories + (1 | Study),
-  data = subset(df_Increasing, !is.na(N_trajectories)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["N_trajectories"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Time between trauma and T1
-```{r Increasing-mods-cont-trauma-to-t1}
-model <- glmer(
-  cbind(Increasing_n, Sample_Size - Increasing_n) ~ Trauma_TP1 + (1 | Study),
-  data = subset(df_Increasing, !is.na(Trauma_TP1)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Trauma_TP1"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Time span of study (TP1 → last)
-```{r Increasing-mods-cont-time-span}
-model <- glmer(
-  cbind(Increasing_n, Sample_Size - Increasing_n) ~ TP1_TPX + (1 | Study),
-  data = subset(df_Increasing, !is.na(TP1_TPX)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["TP1_TPX"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Time between trauma and last assessment
-```{r Increasing-mods-cont-trauma-to-last}
-model <- glmer(
-  cbind(Increasing_n, Sample_Size - Increasing_n) ~ Trauma_TPX + (1 | Study),
-  data = subset(df_Increasing, !is.na(Trauma_TPX)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Trauma_TPX"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Sample size (per 100)
-```{r Increasing-mods-cont-sample-size}
-df_Increasing$Sample_Size_100 <- df_Increasing$Sample_Size / 100
-
-model <- glmer(
-  cbind(Increasing_n, Sample_Size - Increasing_n) ~ Sample_Size_100 + (1 | Study),
-  data = subset(df_Increasing, !is.na(Sample_Size_100)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Sample_Size_100"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per 100 participants):", round(delta, 2), "\n")
-```
-
-#### Entropy
-```{r Increasing-mods-cont-entropy}
-model <- glmer(
-  cbind(Increasing_n, Sample_Size - Increasing_n) ~ Entropy + (1 | Study),
-  data = subset(df_Increasing, !is.na(Entropy)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Entropy"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Grolts
-```{r Increasing-mods-cont-grolts}
-model <- glmer(
-  cbind(Increasing_n, Sample_Size - Increasing_n) ~ Grolts + (1 | Study),
-  data = subset(df_Increasing, !is.na(Grolts)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Grolts"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
+tbl_utf8 %>%
+  gt() %>%
+  cols_width(Predictor ~ px(220)) %>%
+  cols_align(align = "center", columns = -Predictor) %>%
+  cols_align(align = "left",   columns = Predictor) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels(columns = everything())
+  ) %>%
+  tab_options(table.width = pct(100))
 ```
 
 ### Categorical moderators
 
-#### DSM-5 vs DSM-IV
-```{r Increasing-mods-cat-dsm}
-model <- glmer(
-  cbind(Increasing_n, Sample_Size - Increasing_n) ~ factor(Diagnostic_DSM) + (1 | Study),
-  data = subset(df_Increasing, Diagnostic_DSM %in% c("4", "5")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # DSM-IV (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Diagnostic_DSM)5"])  # DSM-5
-```
+```{r Increasing-mods-cat}
+fit_cat_Increasing <- \(data, var, keep=NULL, ref=NULL)
+  fit_cat(data, var, keep, ref, success_col = "Increasing_n", denom_col = "Sample_Size")
 
-#### Occupational trauma
-```{r Increasing-mods-cat-occupational}
-model <- glmer(
-  cbind(Increasing_n, Sample_Size - Increasing_n) ~ factor(Occupational_trauma) + (1 | Study),
-  data = subset(df_Increasing, Occupational_trauma %in% c("Yes", "No")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
+fits_cat_Increasing <- purrr::map_dfr(
+  cat_vars, \(spec) do.call(fit_cat_Increasing, c(list(data = df_Increasing), spec))
 )
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # No (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Occupational_trauma)Yes"])
-```
 
-#### Developmental age (Adult vs Youth)
-```{r Increasing-mods-cat-developmental-age}
-model <- glmer(
-  cbind(Increasing_n, Sample_Size - Increasing_n) ~ factor(Developmental_age) + (1 | Study),
-  data = subset(df_Increasing, Developmental_age %in% c("Adult", "Youth")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Adult (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Developmental_age)Youth"])
-```
+# build table
+ref_prev_Increasing <- fits_cat_Increasing %>%
+  dplyr::filter(level == ref_level) %>%
+  dplyr::select(moderator, ref_level, ref_prev = prevalence_pct)
 
-#### Country income (Location)
-```{r Increasing-mods-cat-country-income}
-model <- glmer(
-  cbind(Increasing_n, Sample_Size - Increasing_n) ~ factor(Location) + (1 | Study),
-  data = subset(df_Increasing, !is.na(Location)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Reference group
-```
+Increasing_cat_table <- fits_cat_Increasing %>%
+  # drop ref–ref rows
+  dplyr::filter(level != ref_level) %>%
+  # join the correct ref prevalence for Increasing
+  dplyr::left_join(ref_prev_Increasing, by = c("moderator", "ref_level")) %>%
+  # pretty names for ref and comparison
+  dplyr::left_join(lvl_map, by = c("moderator", "ref_level" = "orig")) %>%
+  dplyr::rename(pretty_ref = pretty) %>%
+  dplyr::left_join(lvl_map, by = c("moderator", "level" = "orig")) %>%
+  dplyr::rename(pretty_cmp = pretty) %>%
+  dplyr::mutate(
+    Predictor                 = dplyr::recode(moderator, !!!mod_labels, .default = moderator),
+    `Samples (k)`             = n,
+    `Reference (Name)`        = dplyr::coalesce(pretty_ref, ref_level),
+    `Reference (Prevalence)`  = sprintf("%.1f%%", ref_prev),
+    `Comparison (Name)`       = dplyr::coalesce(pretty_cmp, level),
+    `Comparison (Prevalence)` = sprintf("%.1f%%", prevalence_pct),
+    !!delta_col               := round(diff_vs_ref_pp, 2),  # <-- key change
+    `p-value`                 = paste0(fmt_p(p_value), ifelse(is.na(p_value), "", paste0(" ", sig(p_value))))
+  ) %>%
+  dplyr::select(
+    Predictor, `Samples (k)`, `Reference (Name)`, `Reference (Prevalence)`,
+    `Comparison (Name)`, `Comparison (Prevalence)`, dplyr::all_of(delta_col), `p-value`
+  ) %>%
+  dplyr::arrange(Predictor, `Comparison (Name)`)
 
-#### US vs non-US
-```{r Increasing-mods-cat-us}
-model <- glmer(
-  cbind(Increasing_n, Sample_Size - Increasing_n) ~ factor(Location_US) + (1 | Study),
-  data = subset(df_Increasing, !is.na(Location_US)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Non-US (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Location_US)US"])
-```
-
-#### LGMM vs LCGA
-```{r Increasing-mods-cat-lgmm-lcga}
-model <- glmer(
-  cbind(Increasing_n, Sample_Size - Increasing_n) ~ factor(Trajectory_analysis) + (1 | Study),
-  data = subset(df_Increasing, !is.na(Trajectory_analysis)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Reference model
-```
-
-#### PTSD assessment: Interview vs Self
-```{r Increasing-mods-cat-interview-self}
-model <- glmer(
-  cbind(Increasing_n, Sample_Size - Increasing_n) ~ factor(Scale_moderator) + (1 | Study),
-  data = subset(df_Increasing, Scale_moderator %in% c("Interview", "Self")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Interview (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Scale_moderator)Self"])
-```
-
-#### Interpersonal vs non-interpersonal trauma
-```{r Increasing-mods-cat-interpersonal}
-model <- glmer(
-  cbind(Increasing_n, Sample_Size - Increasing_n) ~ factor(Trauma_exposure) + (1 | Study),
-  data = subset(df_Increasing, Trauma_exposure %in% c("Inter", "Non")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Interpersonal (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Trauma_exposure)Non"])
-```
-
-#### Trauma type: Combat, Natural, Injury
-```{r Increasing-mods-cat-trauma-type}
-model <- glmer(
-  cbind(Increasing_n, Sample_Size - Increasing_n) ~ factor(Trauma_type) + (1 | Study),
-  data = subset(df_Increasing, Trauma_type %in% c("Combat", "Natural", "Injury")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Reference trauma type
-if ("factor(Trauma_type)Injury" %in% names(fixef(model))) {
-  plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Trauma_type)Injury"])
-}
-if ("factor(Trauma_type)Natural" %in% names(fixef(model))) {
-  plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Trauma_type)Natural"])
-}
-```
-
-#### Military population
-```{r Increasing-mods-cat-military}
-model <- glmer(
-  cbind(Increasing_n, Sample_Size - Increasing_n) ~ factor(Military) + (1 | Study),
-  data = subset(df_Increasing, !is.na(Military)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # No (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Military)Yes"])
-```
-
-#### Discrete
-```{r Increasing-mods-cat-discrete}
-model <- glmer(
-  cbind(Increasing_n, Sample_Size - Increasing_n) ~ factor(Discrete) + (1 | Study),
-  data = subset(df_Increasing, Discrete %in% c("Yes", "No")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Discrete)Yes"])
-```
-
-#### Health workers + First responders vs other
-```{r Increasing-mods-cat-health-first}
-df_Increasing$Health_First <- relevel(factor(df_Increasing$Health_First), ref = "Yes")
-model <- glmer(
-  cbind(Increasing_n, Sample_Size - Increasing_n) ~ factor(Health_First) + (1 | Study),
-  data = subset(df_Increasing, Health_First %in% c("Yes", "No")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Yes (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Health_First)No"])
+# render
+Increasing_cat_table %>%
+  gt() %>%
+  cols_width(Predictor ~ px(110)) %>%
+  cols_align(align = "left",   columns = Predictor) %>%
+  cols_align(align = "center", columns = -Predictor) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = list(
+      cells_column_labels(columns = everything())
+    )
+  ) %>%
+  tab_options(
+    data_row.padding = px(4),
+    column_labels.padding = px(6),
+    table.font.size = px(13)
+  )
 ```
 
 ## 🩸 High Symptom Trajectory
 
 ```{r High-moderators-setup}
-
 df_High <- df_moderation
 
 df_High <- df_High %>%
@@ -1308,12 +679,8 @@ df_High <- df_High %>%
 # Calculate High_n as (percentage / 100) * sample size
 df_High$High_n <-
   round((df_High$High_percentage / 100) * df_High$Sample_Size)
-
-# Ensure High_percentage is numeric
-df_High$High_percentage <- as.numeric(df_High$High_percentage)
-
-
 ```
+
 ### Descriptives
 
 We provide additional descriptives based on the High trajectory variable, using the full dataset.
@@ -1323,396 +690,121 @@ We provide additional descriptives based on the High trajectory variable, using 
 # Total number of individuals classified as High (ignoring missingness in other variables)
 total_High_n <- sum(df_High$High_n, na.rm = TRUE)
 
-# Number of unique studies (assumes a column Study exists)
-unique_studies <- length(unique(df_High$Study))
+# Number of unique samples
+unique_samples <- length(unique(df_High$Study))
 
 # Display as a table
 additional_info <- data.frame(
-  Description = c("Total number of individuals in High trajectory", "Number of unique studies"),
-  Value = format(c(total_High_n, unique_studies), big.mark = ",")
+  Description = c("Total number of individuals in High trajectory", "Number of unique samples"),
+  Value = format(c(total_High_n, unique_samples), big.mark = ",")
 )
 
 knitr::kable(additional_info, caption = "Additional Descriptives for High Trajectory Analysis")
 ```
+
 ### Continuous moderators
 
-#### Percentage of women
-```{r High-mods-cont-percentage-women}
-model <- glmer(cbind(High_n, Sample_Size - High_n) ~ 
-                 Percentage_women + (1 | Study),
-               data = subset(df_High, !is.na(Percentage_women)), family = binomial)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Estimated prevalence at Percentage_women = 0
+```{r High-mods-cont}
+fit_cont_High <- \(data, var) fit_cont(data, var, success_col = "High_n", denom_col = "Sample_Size")
 
-b0 <- fixef(model)["(Intercept)"]
-b1 <- fixef(model)["Percentage_women"]
-p0 <- plogis(b0)
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Marginal Delta:", round(delta, 2))
-```
+fits_cont_High <- map_dfr(cont_vars, ~fit_cont_High(df_High, .x)) %>%
+  mutate(across(where(is.numeric), ~round(.x, 3)))
 
-#### Mean age
-```{r High-mods-cont-mean-age}
-model <- glmer(
-  cbind(High_n, Sample_Size - High_n) ~ Mean_age + (1 | Study),
-  data = subset(df_High, !is.na(Mean_age)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Mean_age"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
+# build table
+tbl <- fits_cont_High %>%
+  mutate(
+    Predictor = dplyr::recode(predictor, !!!mod_labels, .default = predictor),
+    Predictor = factor(Predictor, levels = mod_levels),
+    `Prevalence (0%)` = sprintf("%.1f%%", prevalence_at_0_pct),
+    !!delta_col := marginal_delta_pp_per_unit,
+    `P-value` = paste0(fmt_p(p_value), ifelse(is.na(p_value), "", paste0(" ", sig(p_value)))),
+    Slope = slope
+  ) %>%
+  select(Predictor, Samples, `Prevalence (0%)`, Slope, dplyr::all_of(delta_col),`P-value`) %>%
+  arrange(Predictor)
 
-#### Percentage of minorities
-```{r High-mods-cont-percentage-minority}
-model <- glmer(
-  cbind(High_n, Sample_Size - High_n) ~ Percentage_minority + (1 | Study),
-  data = subset(df_High, !is.na(Percentage_minority)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Percentage_minority"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
+# ensure the table and its column names are UTF-8
+tbl_utf8 <- tbl
+names(tbl_utf8) <- enc2utf8(names(tbl_utf8))
+tbl_utf8 <- dplyr::mutate(tbl_utf8, dplyr::across(where(is.character), enc2utf8))
 
-#### Partner
-```{r High-mods-cont-partner}
-model <- glmer(
-  cbind(High_n, Sample_Size - High_n) ~ Percentage_partner + (1 | Study),
-  data = subset(df_High, !is.na(Percentage_partner)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Partner"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at reference:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### High education
-```{r High-mods-cont-High-education}
-model <- glmer(
-  cbind(High_n, Sample_Size - High_n) ~ High_education + (1 | Study),
-  data = subset(df_High, !is.na(High_education)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["High_education"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at reference:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Number of timepoints
-```{r High-mods-cont-num-timepoints}
-model <- glmer(
-  cbind(High_n, Sample_Size - High_n) ~ TP_assessments + (1 | Study),
-  data = subset(df_High, !is.na(TP_assessments)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["TP_assessments"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Number of trajectories
-```{r High-mods-cont-num-trajectories}
-model <- glmer(
-  cbind(High_n, Sample_Size - High_n) ~ N_trajectories + (1 | Study),
-  data = subset(df_High, !is.na(N_trajectories)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["N_trajectories"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Time between trauma and T1
-```{r High-mods-cont-trauma-to-t1}
-model <- glmer(
-  cbind(High_n, Sample_Size - High_n) ~ Trauma_TP1 + (1 | Study),
-  data = subset(df_High, !is.na(Trauma_TP1)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Trauma_TP1"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Time span of study (TP1 → last)
-```{r High-mods-cont-time-span}
-model <- glmer(
-  cbind(High_n, Sample_Size - High_n) ~ TP1_TPX + (1 | Study),
-  data = subset(df_High, !is.na(TP1_TPX)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["TP1_TPX"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Time between trauma and last assessment
-```{r High-mods-cont-trauma-to-last}
-model <- glmer(
-  cbind(High_n, Sample_Size - High_n) ~ Trauma_TPX + (1 | Study),
-  data = subset(df_High, !is.na(Trauma_TPX)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Trauma_TPX"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Sample size (per 100)
-```{r High-mods-cont-sample-size}
-df_High$Sample_Size_100 <- df_High$Sample_Size / 100
-
-model <- glmer(
-  cbind(High_n, Sample_Size - High_n) ~ Sample_Size_100 + (1 | Study),
-  data = subset(df_High, !is.na(Sample_Size_100)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Sample_Size_100"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per 100 participants):", round(delta, 2), "\n")
-```
-
-#### Entropy
-```{r High-mods-cont-entropy}
-model <- glmer(
-  cbind(High_n, Sample_Size - High_n) ~ Entropy + (1 | Study),
-  data = subset(df_High, !is.na(Entropy)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Entropy"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Grolts
-```{r High-mods-cont-grolts}
-model <- glmer(
-  cbind(High_n, Sample_Size - High_n) ~ Grolts + (1 | Study),
-  data = subset(df_High, !is.na(Grolts)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Grolts"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
+# render
+tbl_utf8 %>%
+  gt() %>%
+  cols_width(Predictor ~ px(220)) %>%
+  cols_align(align = "center", columns = -Predictor) %>%
+  cols_align(align = "left",   columns = Predictor) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels(columns = everything())
+  ) %>%
+  tab_options(table.width = pct(100))
 ```
 
 ### Categorical moderators
 
-#### DSM-5 vs DSM-IV
-```{r High-mods-cat-dsm}
-model <- glmer(
-  cbind(High_n, Sample_Size - High_n) ~ factor(Diagnostic_DSM) + (1 | Study),
-  data = subset(df_High, Diagnostic_DSM %in% c("4", "5")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # DSM-IV (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Diagnostic_DSM)5"])  # DSM-5
-```
+```{r High-mods-cat}
+fit_cat_High <- \(data, var, keep=NULL, ref=NULL)
+  fit_cat(data, var, keep, ref, success_col = "High_n", denom_col = "Sample_Size")
 
-#### Occupational trauma
-```{r High-mods-cat-occupational}
-model <- glmer(
-  cbind(High_n, Sample_Size - High_n) ~ factor(Occupational_trauma) + (1 | Study),
-  data = subset(df_High, Occupational_trauma %in% c("Yes", "No")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
+fits_cat_High <- purrr::map_dfr(
+  cat_vars, \(spec) do.call(fit_cat_High, c(list(data = df_High), spec))
 )
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # No (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Occupational_trauma)Yes"])
-```
 
-#### Developmental age (Adult vs Youth)
-```{r High-mods-cat-developmental-age}
-model <- glmer(
-  cbind(High_n, Sample_Size - High_n) ~ factor(Developmental_age) + (1 | Study),
-  data = subset(df_High, Developmental_age %in% c("Adult", "Youth")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Adult (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Developmental_age)Youth"])
-```
+# build table
+ref_prev_High <- fits_cat_High %>%
+  dplyr::filter(level == ref_level) %>%
+  dplyr::select(moderator, ref_level, ref_prev = prevalence_pct)
 
-#### Country income (Location)
-```{r High-mods-cat-country-income}
-model <- glmer(
-  cbind(High_n, Sample_Size - High_n) ~ factor(Location) + (1 | Study),
-  data = subset(df_High, !is.na(Location)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Reference group
-```
+High_cat_table <- fits_cat_High %>%
+  # drop ref–ref rows
+  dplyr::filter(level != ref_level) %>%
+  # join the correct ref prevalence for High
+  dplyr::left_join(ref_prev_High, by = c("moderator", "ref_level")) %>%
+  # pretty names for ref and comparison
+  dplyr::left_join(lvl_map, by = c("moderator", "ref_level" = "orig")) %>%
+  dplyr::rename(pretty_ref = pretty) %>%
+  dplyr::left_join(lvl_map, by = c("moderator", "level" = "orig")) %>%
+  dplyr::rename(pretty_cmp = pretty) %>%
+  dplyr::mutate(
+    Predictor                 = dplyr::recode(moderator, !!!mod_labels, .default = moderator),
+    `Samples (k)`             = n,
+    `Reference (Name)`        = dplyr::coalesce(pretty_ref, ref_level),
+    `Reference (Prevalence)`  = sprintf("%.1f%%", ref_prev),
+    `Comparison (Name)`       = dplyr::coalesce(pretty_cmp, level),
+    `Comparison (Prevalence)` = sprintf("%.1f%%", prevalence_pct),
+    !!delta_col               := round(diff_vs_ref_pp, 2),  # <-- key change
+    `p-value`                 = paste0(fmt_p(p_value), ifelse(is.na(p_value), "", paste0(" ", sig(p_value))))
+  ) %>%
+  dplyr::select(
+    Predictor, `Samples (k)`, `Reference (Name)`, `Reference (Prevalence)`,
+    `Comparison (Name)`, `Comparison (Prevalence)`, dplyr::all_of(delta_col), `p-value`
+  ) %>%
+  dplyr::arrange(Predictor, `Comparison (Name)`)
 
-#### US vs non-US
-```{r High-mods-cat-us}
-model <- glmer(
-  cbind(High_n, Sample_Size - High_n) ~ factor(Location_US) + (1 | Study),
-  data = subset(df_High, !is.na(Location_US)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Non-US (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Location_US)US"])
-```
-
-#### LGMM vs LCGA
-```{r High-mods-cat-lgmm-lcga}
-model <- glmer(
-  cbind(High_n, Sample_Size - High_n) ~ factor(Trajectory_analysis) + (1 | Study),
-  data = subset(df_High, !is.na(Trajectory_analysis)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Reference model
-```
-
-#### PTSD assessment: Interview vs Self
-```{r High-mods-cat-interview-self}
-model <- glmer(
-  cbind(High_n, Sample_Size - High_n) ~ factor(Scale_moderator) + (1 | Study),
-  data = subset(df_High, Scale_moderator %in% c("Interview", "Self")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Interview (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Scale_moderator)Self"])
-```
-
-#### Interpersonal vs non-interpersonal trauma
-```{r High-mods-cat-interpersonal}
-model <- glmer(
-  cbind(High_n, Sample_Size - High_n) ~ factor(Trauma_exposure) + (1 | Study),
-  data = subset(df_High, Trauma_exposure %in% c("Inter", "Non")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Interpersonal (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Trauma_exposure)Non"])
-```
-
-#### Trauma type: Combat, Natural, Injury
-```{r High-mods-cat-trauma-type}
-model <- glmer(
-  cbind(High_n, Sample_Size - High_n) ~ factor(Trauma_type) + (1 | Study),
-  data = subset(df_High, Trauma_type %in% c("Combat", "Natural", "Injury")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Reference trauma type
-if ("factor(Trauma_type)Injury" %in% names(fixef(model))) {
-  plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Trauma_type)Injury"])
-}
-if ("factor(Trauma_type)Natural" %in% names(fixef(model))) {
-  plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Trauma_type)Natural"])
-}
-```
-
-#### Military population
-```{r High-mods-cat-military}
-model <- glmer(
-  cbind(High_n, Sample_Size - High_n) ~ factor(Military) + (1 | Study),
-  data = subset(df_High, !is.na(Military)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # No (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Military)Yes"])
-```
-
-#### Discrete
-```{r High-mods-cat-discrete}
-model <- glmer(
-  cbind(High_n, Sample_Size - High_n) ~ factor(Discrete) + (1 | Study),
-  data = subset(df_High, Discrete %in% c("Yes", "No")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Discrete)Yes"])
-```
-
-#### Health workers + First responders vs other
-```{r High-mods-cat-health-first}
-df_High$Health_First <- relevel(factor(df_High$Health_First), ref = "Yes")
-model <- glmer(
-  cbind(High_n, Sample_Size - High_n) ~ factor(Health_First) + (1 | Study),
-  data = subset(df_High, Health_First %in% c("Yes", "No")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Yes (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Health_First)No"])
+# render
+High_cat_table %>%
+  gt() %>%
+  cols_width(Predictor ~ px(110)) %>%
+  cols_align(align = "left",   columns = Predictor) %>%
+  cols_align(align = "center", columns = -Predictor) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = list(
+      cells_column_labels(columns = everything())
+    )
+  ) %>%
+  tab_options(
+    data_row.padding = px(4),
+    column_labels.padding = px(6),
+    table.font.size = px(13)
+  )
 ```
 
 ## 🌗 Moderate Symptom Trajectory
 
 ```{r Moderate-moderators-setup}
-
 df_Moderate <- df_moderation
-
 
 df_Moderate <- df_Moderate %>%
   filter(!is.na(Moderate_percentage))
@@ -1720,402 +812,123 @@ df_Moderate <- df_Moderate %>%
 # Calculate Moderate_n as (percentage / 100) * sample size
 df_Moderate$Moderate_n <-
   round((df_Moderate$Moderate_percentage / 100) * df_Moderate$Sample_Size)
-
-# Ensure Moderate_percentage is numeric
-df_Moderate$Moderate_percentage <- as.numeric(df_Moderate$Moderate_percentage)
-
-
 ```
+
 ### Descriptives
 
 We provide additional descriptives based on the Moderate trajectory variable, using the full dataset.
 
 ```{r Moderate-descriptives}
-
 # Total number of individuals classified as Moderate (ignoring missingness in other variables)
 total_Moderate_n <- sum(df_Moderate$Moderate_n, na.rm = TRUE)
 
-# Number of unique studies (assumes a column Study exists)
-unique_studies <- length(unique(df_Moderate$Study))
+# Number of unique samples
+unique_samples <- length(unique(df_Moderate$Study))
 
 # Display as a table
 additional_info <- data.frame(
-  Description = c("Total number of individuals in Moderate trajectory", "Number of unique studies"),
-  Value = format(c(total_Moderate_n, unique_studies), big.mark = ",")
+  Description = c("Total number of individuals in Moderate trajectory", "Number of unique samples"),
+  Value = format(c(total_Moderate_n, unique_samples), big.mark = ",")
 )
 
 knitr::kable(additional_info, caption = "Additional Descriptives for Moderate Trajectory Analysis")
 ```
+
 ### Continuous moderators
 
-#### Percentage of women
-```{r Moderate-mods-cont-percentage-women}
-model <- glmer(cbind(Moderate_n, Sample_Size - Moderate_n) ~ 
-                 Percentage_women + (1 | Study),
-               data = subset(df_Moderate, !is.na(Percentage_women)), family = binomial)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Estimated prevalence at Percentage_women = 0
+```{r Moderate-mods-cont}
+fit_cont_Moderate <- \(data, var) fit_cont(data, var, success_col = "Moderate_n", denom_col = "Sample_Size")
 
-b0 <- fixef(model)["(Intercept)"]
-b1 <- fixef(model)["Percentage_women"]
-p0 <- plogis(b0)
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Marginal Delta:", round(delta, 2))
-```
+fits_cont_Moderate <- map_dfr(cont_vars, ~fit_cont_Moderate(df_Moderate, .x)) %>%
+  mutate(across(where(is.numeric), ~round(.x, 3)))
 
-#### Mean age
-```{r Moderate-mods-cont-mean-age}
-model <- glmer(
-  cbind(Moderate_n, Sample_Size - Moderate_n) ~ Mean_age + (1 | Study),
-  data = subset(df_Moderate, !is.na(Mean_age)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Mean_age"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
+# build table
+tbl <- fits_cont_Moderate %>%
+  mutate(
+    Predictor = dplyr::recode(predictor, !!!mod_labels, .default = predictor),
+    Predictor = factor(Predictor, levels = mod_levels),
+    `Prevalence (0%)` = sprintf("%.1f%%", prevalence_at_0_pct),
+    !!delta_col := marginal_delta_pp_per_unit,
+    `P-value` = paste0(fmt_p(p_value), ifelse(is.na(p_value), "", paste0(" ", sig(p_value)))),
+    Slope = slope
+  ) %>%
+  select(Predictor, Samples, `Prevalence (0%)`, Slope, dplyr::all_of(delta_col),`P-value`) %>%
+  arrange(Predictor)
 
-#### Percentage of minorities
-```{r Moderate-mods-cont-percentage-minority}
-model <- glmer(
-  cbind(Moderate_n, Sample_Size - Moderate_n) ~ Percentage_minority + (1 | Study),
-  data = subset(df_Moderate, !is.na(Percentage_minority)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Percentage_minority"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
+# ensure the table and its column names are UTF-8
+tbl_utf8 <- tbl
+names(tbl_utf8) <- enc2utf8(names(tbl_utf8))
+tbl_utf8 <- dplyr::mutate(tbl_utf8, dplyr::across(where(is.character), enc2utf8))
 
-#### Partner
-```{r Moderate-mods-cont-partner}
-model <- glmer(
-  cbind(Moderate_n, Sample_Size - Moderate_n) ~ Percentage_partner + (1 | Study),
-  data = subset(df_Moderate, !is.na(Percentage_partner)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Partner"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at reference:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Moderate education
-```{r Moderate-mods-cont-Moderate-education}
-model <- glmer(
-  cbind(Moderate_n, Sample_Size - Moderate_n) ~ High_education + (1 | Study),
-  data = subset(df_Moderate, !is.na(High_education)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["High_education"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at reference:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Number of timepoints
-```{r Moderate-mods-cont-num-timepoints}
-model <- glmer(
-  cbind(Moderate_n, Sample_Size - Moderate_n) ~ TP_assessments + (1 | Study),
-  data = subset(df_Moderate, !is.na(TP_assessments)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["TP_assessments"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Number of trajectories
-```{r Moderate-mods-cont-num-trajectories}
-model <- glmer(
-  cbind(Moderate_n, Sample_Size - Moderate_n) ~ N_trajectories + (1 | Study),
-  data = subset(df_Moderate, !is.na(N_trajectories)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["N_trajectories"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Time between trauma and T1
-```{r Moderate-mods-cont-trauma-to-t1}
-model <- glmer(
-  cbind(Moderate_n, Sample_Size - Moderate_n) ~ Trauma_TP1 + (1 | Study),
-  data = subset(df_Moderate, !is.na(Trauma_TP1)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Trauma_TP1"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Time span of study (TP1 → last)
-```{r Moderate-mods-cont-time-span}
-model <- glmer(
-  cbind(Moderate_n, Sample_Size - Moderate_n) ~ TP1_TPX + (1 | Study),
-  data = subset(df_Moderate, !is.na(TP1_TPX)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["TP1_TPX"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Time between trauma and last assessment
-```{r Moderate-mods-cont-trauma-to-last}
-model <- glmer(
-  cbind(Moderate_n, Sample_Size - Moderate_n) ~ Trauma_TPX + (1 | Study),
-  data = subset(df_Moderate, !is.na(Trauma_TPX)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Trauma_TPX"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Sample size (per 100)
-```{r Moderate-mods-cont-sample-size}
-df_Moderate$Sample_Size_100 <- df_Moderate$Sample_Size / 100
-
-model <- glmer(
-  cbind(Moderate_n, Sample_Size - Moderate_n) ~ Sample_Size_100 + (1 | Study),
-  data = subset(df_Moderate, !is.na(Sample_Size_100)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Sample_Size_100"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per 100 participants):", round(delta, 2), "\n")
-```
-
-#### Entropy
-```{r Moderate-mods-cont-entropy}
-model <- glmer(
-  cbind(Moderate_n, Sample_Size - Moderate_n) ~ Entropy + (1 | Study),
-  data = subset(df_Moderate, !is.na(Entropy)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Entropy"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
-```
-
-#### Grolts
-```{r Moderate-mods-cont-grolts}
-model <- glmer(
-  cbind(Moderate_n, Sample_Size - Moderate_n) ~ Grolts + (1 | Study),
-  data = subset(df_Moderate, !is.na(Grolts)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-p0 <- plogis(fixef(model)["(Intercept)"])
-b1 <- fixef(model)["Grolts"]
-delta <- b1 * p0 * (1 - p0) * 100
-cat("Estimated prevalence at 0:", round(100*p0, 2), "%\n",
-    "Marginal Delta (pp per unit):", round(delta, 2), "\n")
+tbl_utf8 %>%
+  gt() %>%
+  cols_width(Predictor ~ px(220)) %>%
+  cols_align(align = "center", columns = -Predictor) %>%
+  cols_align(align = "left",   columns = Predictor) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels(columns = everything())
+  ) %>%
+  tab_options(table.width = pct(100))
 ```
 
 ### Categorical moderators
 
-#### DSM-5 vs DSM-IV
-```{r Moderate-mods-cat-dsm}
-model <- glmer(
-  cbind(Moderate_n, Sample_Size - Moderate_n) ~ factor(Diagnostic_DSM) + (1 | Study),
-  data = subset(df_Moderate, Diagnostic_DSM %in% c("4", "5")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # DSM-IV (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Diagnostic_DSM)5"])  # DSM-5
-```
+```{r Moderate-mods-cat}
+fit_cat_Moderate <- \(data, var, keep=NULL, ref=NULL)
+  fit_cat(data, var, keep, ref, success_col = "Moderate_n", denom_col = "Sample_Size")
 
-#### Occupational trauma
-```{r Moderate-mods-cat-occupational}
-model <- glmer(
-  cbind(Moderate_n, Sample_Size - Moderate_n) ~ factor(Occupational_trauma) + (1 | Study),
-  data = subset(df_Moderate, Occupational_trauma %in% c("Yes", "No")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
+fits_cat_Moderate <- purrr::map_dfr(
+  cat_vars, \(spec) do.call(fit_cat_Moderate, c(list(data = df_Moderate), spec))
 )
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # No (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Occupational_trauma)Yes"])
-```
 
-#### Developmental age (Adult vs Youth)
-```{r Moderate-mods-cat-developmental-age}
-model <- glmer(
-  cbind(Moderate_n, Sample_Size - Moderate_n) ~ factor(Developmental_age) + (1 | Study),
-  data = subset(df_Moderate, Developmental_age %in% c("Adult", "Youth")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Adult (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Developmental_age)Youth"])
-```
+# build table
+ref_prev_Moderate <- fits_cat_Moderate %>%
+  dplyr::filter(level == ref_level) %>%
+  dplyr::select(moderator, ref_level, ref_prev = prevalence_pct)
 
-#### Country income (Location)
-```{r Moderate-mods-cat-country-income}
-model <- glmer(
-  cbind(Moderate_n, Sample_Size - Moderate_n) ~ factor(Location) + (1 | Study),
-  data = subset(df_Moderate, !is.na(Location)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Reference group
-```
+Moderate_cat_table <- fits_cat_Moderate %>%
+  # drop ref–ref rows
+  dplyr::filter(level != ref_level) %>%
+  # join the correct ref prevalence for Moderate
+  dplyr::left_join(ref_prev_Moderate, by = c("moderator", "ref_level")) %>%
+  # pretty names for ref and comparison
+  dplyr::left_join(lvl_map, by = c("moderator", "ref_level" = "orig")) %>%
+  dplyr::rename(pretty_ref = pretty) %>%
+  dplyr::left_join(lvl_map, by = c("moderator", "level" = "orig")) %>%
+  dplyr::rename(pretty_cmp = pretty) %>%
+  dplyr::mutate(
+    Predictor                 = dplyr::recode(moderator, !!!mod_labels, .default = moderator),
+    `Samples (k)`             = n,
+    `Reference (Name)`        = dplyr::coalesce(pretty_ref, ref_level),
+    `Reference (Prevalence)`  = sprintf("%.1f%%", ref_prev),
+    `Comparison (Name)`       = dplyr::coalesce(pretty_cmp, level),
+    `Comparison (Prevalence)` = sprintf("%.1f%%", prevalence_pct),
+    !!delta_col               := round(diff_vs_ref_pp, 2),  # <-- key change
+    `p-value`                 = paste0(fmt_p(p_value), ifelse(is.na(p_value), "", paste0(" ", sig(p_value))))
+  ) %>%
+  dplyr::select(
+    Predictor, `Samples (k)`, `Reference (Name)`, `Reference (Prevalence)`,
+    `Comparison (Name)`, `Comparison (Prevalence)`, dplyr::all_of(delta_col), `p-value`
+  ) %>%
+  dplyr::arrange(Predictor, `Comparison (Name)`)
 
-#### US vs non-US
-```{r Moderate-mods-cat-us}
-model <- glmer(
-  cbind(Moderate_n, Sample_Size - Moderate_n) ~ factor(Location_US) + (1 | Study),
-  data = subset(df_Moderate, !is.na(Location_US)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Non-US (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Location_US)US"])
-```
-
-#### LGMM vs LCGA
-```{r Moderate-mods-cat-lgmm-lcga}
-model <- glmer(
-  cbind(Moderate_n, Sample_Size - Moderate_n) ~ factor(Trajectory_analysis) + (1 | Study),
-  data = subset(df_Moderate, !is.na(Trajectory_analysis)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Reference model
-```
-
-#### PTSD assessment: Interview vs Self
-```{r Moderate-mods-cat-interview-self}
-model <- glmer(
-  cbind(Moderate_n, Sample_Size - Moderate_n) ~ factor(Scale_moderator) + (1 | Study),
-  data = subset(df_Moderate, Scale_moderator %in% c("Interview", "Self")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Interview (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Scale_moderator)Self"])
-```
-
-#### Interpersonal vs non-interpersonal trauma
-```{r Moderate-mods-cat-interpersonal}
-model <- glmer(
-  cbind(Moderate_n, Sample_Size - Moderate_n) ~ factor(Trauma_exposure) + (1 | Study),
-  data = subset(df_Moderate, Trauma_exposure %in% c("Inter", "Non")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Interpersonal (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Trauma_exposure)Non"])
-```
-
-#### Trauma type: Combat, Natural, Injury
-```{r Moderate-mods-cat-trauma-type}
-model <- glmer(
-  cbind(Moderate_n, Sample_Size - Moderate_n) ~ factor(Trauma_type) + (1 | Study),
-  data = subset(df_Moderate, Trauma_type %in% c("Combat", "Natural", "Injury")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Reference trauma type
-if ("factor(Trauma_type)Injury" %in% names(fixef(model))) {
-  plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Trauma_type)Injury"])
-}
-if ("factor(Trauma_type)Natural" %in% names(fixef(model))) {
-  plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Trauma_type)Natural"])
-}
-```
-
-#### Military population
-```{r Moderate-mods-cat-military}
-model <- glmer(
-  cbind(Moderate_n, Sample_Size - Moderate_n) ~ factor(Military) + (1 | Study),
-  data = subset(df_Moderate, !is.na(Military)),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # No (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Military)Yes"])
-```
-
-#### Discrete
-```{r Moderate-mods-cat-discrete}
-model <- glmer(
-  cbind(Moderate_n, Sample_Size - Moderate_n) ~ factor(Discrete) + (1 | Study),
-  data = subset(df_Moderate, Discrete %in% c("Yes", "No")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Discrete)Yes"])
-```
-
-#### Health workers + First responders vs other
-```{r Moderate-mods-cat-health-first}
-df_Moderate$Health_First <- relevel(factor(df_Moderate$Health_First), ref = "Yes")
-model <- glmer(
-  cbind(Moderate_n, Sample_Size - Moderate_n) ~ factor(Health_First) + (1 | Study),
-  data = subset(df_Moderate, Health_First %in% c("Yes", "No")),
-  family = binomial,
-  control = glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
-)
-summary(model)
-plogis(fixef(model)["(Intercept)"])  # Yes (reference)
-plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Health_First)No"])
+# render
+Moderate_cat_table %>%
+  gt() %>%
+  cols_width(Predictor ~ px(110)) %>%
+  cols_align(align = "left",   columns = Predictor) %>%
+  cols_align(align = "center", columns = -Predictor) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = list(
+      cells_column_labels(columns = everything())
+    )
+  ) %>%
+  tab_options(
+    data_row.padding = px(4),
+    column_labels.padding = px(6),
+    table.font.size = px(13)
+  )
 ```
 ---
