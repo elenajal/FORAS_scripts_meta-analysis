@@ -42,6 +42,10 @@ library(knitr)
 # load data
 df_moderation <- read.csv2("../pre-processing/output/data_for_moderation_analyses.csv", dec = ".")
 
+# calculate Sample_Size_100
+df_moderation <- df_moderation %>%
+  mutate(Sample_Size_100 = Sample_Size / 100)
+
 # Display the first rows to check the data
 head(df_moderation)
 ```
@@ -960,6 +964,7 @@ Moderate_cat_table %>%
   )
 ```
 ---
+
 
 
 
