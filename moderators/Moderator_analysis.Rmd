@@ -281,9 +281,6 @@ lvl_map <- purrr::imap_dfr(level_labels, ~tibble::tibble(
 df_Low <- df_moderation %>%
   filter(!is.na(Low_percentage))
 
-# Ensure Low_percentage is numeric
-df_Low$Low_percentage <- as.numeric(df_Low$Low_percentage)
-
 # Calculate Low_n as (percentage / 100) * sample size
 df_Low$Low_n <-
   round((df_Low$Low_percentage / 100) * df_Low$Sample_Size)
@@ -416,9 +413,6 @@ Low_cat_table %>%
 df_Decreasing <- df_moderation %>%
   filter(!is.na(Decreasing_percentage))
 
-# Ensure Decreasing_percentage is numeric
-df_Decreasing$Decreasing_percentage <- as.numeric(df_Decreasing$Decreasing_percentage)
-
 # Calculate Decreasing_n as (percentage / 100) * sample size
 df_Decreasing$Decreasing_n <-
   round((df_Decreasing$Decreasing_percentage / 100) * df_Decreasing$Sample_Size)
@@ -550,9 +544,6 @@ Decreasing_cat_table %>%
 ```{r Increasing-moderators-setup}
 df_Increasing <- df_moderation %>%
   filter(!is.na(Increasing_percentage))
-
-# Ensure Increasing_percentage is numeric
-df_Increasing$Increasing_percentage <- as.numeric(df_Increasing$Increasing_percentage)
 
 # Calculate Increasing_n as (percentage / 100) * sample size
 df_Increasing$Increasing_n <-
@@ -688,9 +679,6 @@ df_High <- df_High %>%
 # Calculate High_n as (percentage / 100) * sample size
 df_High$High_n <-
   round((df_High$High_percentage / 100) * df_High$Sample_Size)
-
-# Ensure High_percentage is numeric
-df_High$High_percentage <- as.numeric(df_High$High_percentage)
 ```
 
 ### Descriptives
@@ -824,9 +812,6 @@ df_Moderate <- df_Moderate %>%
 # Calculate Moderate_n as (percentage / 100) * sample size
 df_Moderate$Moderate_n <-
   round((df_Moderate$Moderate_percentage / 100) * df_Moderate$Sample_Size)
-
-# Ensure Moderate_percentage is numeric
-df_Moderate$Moderate_percentage <- as.numeric(df_Moderate$Moderate_percentage)
 ```
 
 ### Descriptives
@@ -947,6 +932,7 @@ Moderate_cat_table %>%
   )
 ```
 ---
+
 
 
 
