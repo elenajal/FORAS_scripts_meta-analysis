@@ -275,15 +275,15 @@ lvl_map <- purrr::imap_dfr(level_labels, ~tibble::tibble(
 
 ```{r low-moderators-setup}
 
-df_low <- df_moderation %>%
+df_Low <- df_moderation %>%
   filter(!is.na(Low_percentage))
 
 # Ensure Low_percentage is numeric
-df_low$Low_percentage <- as.numeric(df_low$Low_percentage)
+df_Low$Low_percentage <- as.numeric(df_Low$Low_percentage)
 
 # Calculate Low_n as (percentage / 100) * sample size
-df_low$Low_n <-
-  round((df_low$Low_percentage / 100) * df_low$Sample_Size)
+df_Low$Low_n <-
+  round((df_low$Low_percentage / 100) * df_Low$Sample_Size)
 
 
 ```
@@ -294,10 +294,10 @@ We provide additional descriptives based on the Low trajectory variable, using t
 ```{r Low-descriptives}
 
 # Total number of individuals classified as Low (ignoring missingness in other variables)
-total_Low_n <- sum(df_low$Low_n, na.rm = TRUE)
+total_Low_n <- sum(df_Low$Low_n, na.rm = TRUE)
 
 # Number of unique studies (assumes a column Study exists)
-unique_studies <- length(unique(df_low$Study))
+unique_studies <- length(unique(df_Low$Study))
 
 # Display as a table
 additional_info <- data.frame(
@@ -959,6 +959,7 @@ Moderate_cat_table %>%
   )
 ```
 ---
+
 
 
 
