@@ -340,7 +340,6 @@ tbl_utf8 <- dplyr::mutate(tbl_utf8, dplyr::across(where(is.character), enc2utf8)
 
 tbl_utf8 %>%
   gt() %>%
-  tab_header(title = "Low Symptoms Trajectory - Continuous Moderators") %>%
   cols_width(Predictor ~ px(220)) %>%
   cols_align(align = "center", columns = -Predictor) %>%
   cols_align(align = "left",   columns = Predictor) %>%
@@ -397,7 +396,6 @@ Low_cat_table <- fits_cat_Low %>%
 # Render
 Low_cat_table %>%
   gt() %>%
-  tab_header(title = "Low Symptoms Trajectory — Categorical Moderators") %>%
   cols_width(Predictor ~ px(110)) %>%
   cols_align(align = "left",   columns = Predictor) %>%
   cols_align(align = "center", columns = -Predictor) %>%
@@ -478,7 +476,6 @@ tbl_utf8 <- dplyr::mutate(tbl_utf8, dplyr::across(where(is.character), enc2utf8)
 # render
 tbl_utf8 %>%
   gt() %>%
-  tab_header(title = "Decreasing Symptoms Trajectory - Continuous Moderators") %>%
   cols_width(Predictor ~ px(220)) %>%
   cols_align(align = "center", columns = -Predictor) %>%
   cols_align(align = "left",   columns = Predictor) %>%
@@ -534,7 +531,6 @@ Decreasing_cat_table <- fits_cat_Decreasing %>%
 ## Render
 Decreasing_cat_table %>%
   gt() %>%
-  tab_header(title = "Decreasing Symptoms Trajectory — Categorical Moderators") %>%
   cols_width(Predictor ~ px(110)) %>%
   cols_align(align = "left",   columns = Predictor) %>%
   cols_align(align = "center", columns = -Predictor) %>%
@@ -614,7 +610,6 @@ tbl_utf8 <- dplyr::mutate(tbl_utf8, dplyr::across(where(is.character), enc2utf8)
 
 tbl_utf8 %>%
   gt() %>%
-  tab_header(title = "Increasing Symptoms Trajectory - Continuous Moderators") %>%
   cols_width(Predictor ~ px(220)) %>%
   cols_align(align = "center", columns = -Predictor) %>%
   cols_align(align = "left",   columns = Predictor) %>%
@@ -669,7 +664,6 @@ Increasing_cat_table <- fits_cat_Increasing %>%
 # render
 Increasing_cat_table %>%
   gt() %>%
-  tab_header(title = "Increasing Symptoms Trajectory — Categorical Moderators") %>%
   cols_width(Predictor ~ px(110)) %>%
   cols_align(align = "left",   columns = Predictor) %>%
   cols_align(align = "center", columns = -Predictor) %>%
@@ -753,7 +747,6 @@ tbl_utf8 <- dplyr::mutate(tbl_utf8, dplyr::across(where(is.character), enc2utf8)
 # render
 tbl_utf8 %>%
   gt() %>%
-  tab_header(title = "High Symptoms Trajectory - Continuous Moderators") %>%
   cols_width(Predictor ~ px(220)) %>%
   cols_align(align = "center", columns = -Predictor) %>%
   cols_align(align = "left",   columns = Predictor) %>%
@@ -808,7 +801,6 @@ High_cat_table <- fits_cat_High %>%
 # render
 High_cat_table %>%
   gt() %>%
-  tab_header(title = "High Symptoms Trajectory — Categorical Moderators") %>%
   cols_width(Predictor ~ px(110)) %>%
   cols_align(align = "left",   columns = Predictor) %>%
   cols_align(align = "center", columns = -Predictor) %>%
@@ -892,7 +884,6 @@ tbl_utf8 <- dplyr::mutate(tbl_utf8, dplyr::across(where(is.character), enc2utf8)
 
 tbl_utf8 %>%
   gt() %>%
-  tab_header(title = "Moderate Symptoms Trajectory - Continuous Moderators") %>%
   cols_width(Predictor ~ px(220)) %>%
   cols_align(align = "center", columns = -Predictor) %>%
   cols_align(align = "left",   columns = Predictor) %>%
@@ -947,7 +938,6 @@ Moderate_cat_table <- fits_cat_Moderate %>%
 # render
 Moderate_cat_table %>%
   gt() %>%
-  tab_header(title = "Moderate Symptoms Trajectory — Categorical Moderators") %>%
   cols_width(Predictor ~ px(110)) %>%
   cols_align(align = "left",   columns = Predictor) %>%
   cols_align(align = "center", columns = -Predictor) %>%
@@ -964,6 +954,7 @@ Moderate_cat_table %>%
   )
 ```
 ---
+
 
 
 
