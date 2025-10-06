@@ -28,11 +28,12 @@ knitr::opts_knit$set(root.dir = dirname(rstudioapi::getActiveDocumentContext()$p
 # Preparation
 
 ```{r load-packages}
-library(readr)
-library(metafor)
+library(tidyverse)
 library(lme4)
-library(influence.ME)
-library(dplyr)
+library(broom.mixed)
+library(forcats)
+library(gt)
+library(knitr)
 ```
 
 ## Load Data
@@ -959,6 +960,7 @@ Moderate_cat_table %>%
   )
 ```
 ---
+
 
 
 
