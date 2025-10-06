@@ -33,6 +33,10 @@ library(broom.mixed)
 library(forcats)
 library(gt)
 library(knitr)
+library(dplyr)
+library(purrr)
+library(stringr)
+library(tidyr)
 ```
 
 ## Load Data
@@ -932,3 +936,4 @@ Moderate_cat_table %>%
   )
 ```
 ---
+
