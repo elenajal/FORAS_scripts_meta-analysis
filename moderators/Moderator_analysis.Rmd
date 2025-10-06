@@ -33,6 +33,10 @@ library(broom.mixed)
 library(forcats)
 library(gt)
 library(knitr)
+library(dplyr)
+library(purrr)
+library(stringr)
+library(tidyr)
 ```
 
 ## Load Data
@@ -930,5 +934,126 @@ Moderate_cat_table %>%
     column_labels.padding = px(6),
     table.font.size = px(13)
   )
+```
+
+# Tables for Paper
+## Continuous Moderators Summary Table
+
+```{r cont-mods-summary-table}
+# enforce trajectory order
+traj_order <- c("Low","Decreasing","Increasing","High","Moderate")
+
+#define trajectory fits
+fits_by_traj <- list(
+  Low        = fits_cont_Low,
+  Decreasing = fits_cont_Decreasing,
+  Increasing = fits_cont_Increasing,
+  High       = fits_cont_High,
+  Moderate   = fits_cont_Moderate
+)
+
+# build combined table
+tbl_all <- bind_rows(fits_by_traj, .id = "Trajectory") %>%
+  mutate(
+    Trajectory = factor(Trajectory, levels = traj_order),
+    Predictor = dplyr::recode(predictor, !!!mod_labels, .default = predictor),
+    Predictor = factor(Predictor, levels = mod_levels),
+    `Prevalence (0%)` = sprintf("%.1f%%", prevalence_at_0_pct),
+    !!delta_col := marginal_delta_pp_per_unit,
+    `P-value` = paste0(fmt_p(p_value), ifelse(is.na(p_value), "", paste0(" ", sig(p_value)))),
+    Slope = slope
+  ) %>%
+  select(Trajectory, Predictor, Samples, `Prevalence (0%)`, Slope, dplyr::all_of(delta_col), `P-value`) %>%
+  arrange(Trajectory, Predictor)
+
+# ensure UTF-8
+tbl_all_utf8 <- tbl_all
+names(tbl_all_utf8) <- enc2utf8(names(tbl_all_utf8))
+tbl_all_utf8 <- mutate(tbl_all_utf8, across(where(is.character), enc2utf8))
+
+# render one big table, grouped by Trajectory
+tbl_all_utf8 %>%
+  gt(groupname_col = "Trajectory") %>%
+  cols_width(Predictor ~ px(220)) %>%
+  cols_align(align = "center", columns = -Predictor) %>%
+  cols_align(align = "left",   columns = Predictor) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = list(
+      cells_column_labels(columns = everything()),    # bold headers
+      cells_row_groups(groups = everything())         # bold group labels
+    )
+  ) %>%
+  tab_options(table.width = pct(100)) %>%
+  opt_table_font(font = "Times New Roman") 
+```
+
+## Categorical Moderators Summary Table
+
+```{r cat-mods-summary-table}
+# enforce trajectory order
+traj_order <- c("Low","Decreasing","Increasing","High","Moderate")
+
+# find and combine all 'fits_cat_*' data frames
+fit_names <- ls(pattern = "^fits_cat_")
+
+if (length(fit_names) == 0) {
+  knitr::kable(data.frame(Note = "No categorical moderator results found."))
+} else {
+  all_fits_cat <- mget(fit_names) %>%
+    list_rbind(names_to = "traj") %>%
+    mutate(traj = str_remove(traj, "fits_cat_"),
+         traj = factor(traj, levels = traj_order))
+
+  # Prepare the final long table data for gt
+  long_table_data <- all_fits_cat %>%
+    # Add reference prevalence to each row for comparison
+    left_join(
+      y  = filter(., level == ref_level) %>% select(traj, moderator, ref_prev = prevalence_pct),
+      by = c("traj", "moderator")
+    ) %>%
+    filter(level != ref_level) %>%
+    # Create and format the final columns
+    mutate(
+      Predictor               = recode(moderator, !!!mod_labels, .default = moderator),
+      `Reference (Name)`      = coalesce(lvl_map$pretty[match(ref_level, lvl_map$orig)], ref_level),
+      `Comparison (Name)`     = coalesce(lvl_map$pretty[match(level, lvl_map$orig)], level),
+      `Samples (k)`           = n,
+      `Reference Prevalence`  = sprintf("%.1f%%", ref_prev),
+      `Comparison Prevalence` = sprintf("%.1f%%", prevalence_pct),
+      !!delta_col      := round(diff_vs_ref_pp, 2),
+      `p-value`               = paste0(fmt_p(p_value), " ", sig(p_value))
+    ) %>%
+    # Select and order the final columns
+    select(
+      traj, # This column is kept for grouping
+      Predictor,
+      `Samples (k)`,
+      `Reference (Name)`,
+      `Comparison (Name)`,
+      `Reference Prevalence`,
+      `Comparison Prevalence`,
+      !!delta_col,
+      `p-value`
+    ) %>%
+    arrange(traj, Predictor, `Comparison (Name)`)
+
+  # Build the final table, grouped by trajectory
+  long_table_data %>%
+    gt(groupname_col = "traj") %>%
+    # Apply styling
+    cols_width(Predictor ~ px(220)) %>%
+    cols_align(align = "center", columns = where(is.numeric) | where(is.character)) %>%
+    cols_align(align = "left", columns = c(Predictor, `Reference (Name)`, `Comparison (Name)`)) %>%
+    tab_style(
+      style = cell_text(weight = "bold"),
+      locations = list(
+      cells_column_labels(columns = everything()),    # bold headers
+      cells_row_groups(groups = everything())         # bold group labels
+    )
+     ) %>%
+  tab_options(table.width = pct(100)) %>%
+  opt_table_font(font = "Times New Roman") 
+}
 ```
 ---
