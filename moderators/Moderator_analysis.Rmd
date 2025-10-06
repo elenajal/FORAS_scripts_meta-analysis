@@ -70,6 +70,135 @@ knitr::kable(summary_table, caption = "Descriptive Statistics of the Dataset")
 
 Here we fit separate binomial GLMMs (random intercept for `Study`) for each moderator. For continuous moderators, we report the estimated prevalence at the reference (moderator = 0) and the marginal delta (approximate change in percentage points per 1‑unit increase). For categorical moderators, we report the estimated prevalence for the reference level and contrasted level(s).
 
+## Moderators setup
+```{r mods-setup-functions}
+# distinguish between continuous and categorical variables
+cont_vars <- c(
+  "Percentage_women",
+  "Mean_age",
+  "Percentage_minority",
+  "Percentage_partner",
+  "High_education",
+  "TP_assessments",
+  "N_trajectories",
+  "Trauma_TP1",
+  "TP1_TPX",
+  "Trauma_TPX",
+  "Entropy",
+  "Grolts",
+  "Sample_Size_100" # unit = 100 participants
+)
+
+cat_vars <- list(
+  list(var="Diagnostic_DSM",     keep=c("4","5"),                 ref="4"),
+  list(var="Occupational_trauma",keep=c("No","Yes"),              ref="No"),
+  list(var="Developmental_age",  keep=c("Adult","Youth"),         ref="Adult"),
+  list(var="Location",           keep=NULL,                       ref=NULL),
+  list(var="Location_US",        keep=NULL,                       ref="Non-US"),
+  list(var="Trajectory_analysis",keep=NULL,                       ref=NULL),
+  list(var="Scale_moderator",    keep=c("Interview","Self"),      ref="Interview"),
+  list(var="Trauma_exposure",    keep=c("Inter","Non"),           ref="Inter"),
+  list(var="Trauma_type",        keep=c("Combat","Natural","Injury"), ref="Combat"),
+  list(var="Military",           keep=NULL,                       ref="No"),
+  list(var="Discrete",           keep=c("No","Yes"),              ref="No"),
+  list(var="Health_First",       keep=c("Yes","No"),              ref="Yes")
+)
+
+# Consistent optimizer for all fits
+ctrl <- glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
+
+# Utility to add Success/Failure columns for a given trajectory
+add_binom_cols <- function(data, success_col = "Low_n", denom_col = "Sample_Size") {
+  stopifnot(success_col %in% names(data), denom_col %in% names(data))
+  data %>%
+    mutate(
+      Success = .data[[success_col]],
+      Failure = .data[[denom_col]] - Success
+    )
+}
+
+#fit model for one predictor and return the key stats
+fit_cont <- function(data, var, success_col = "Low_n", denom_col = "Sample_Size") {
+  d <- data %>%
+    filter(!is.na(.data[[var]])) %>%
+    add_binom_cols(success_col = success_col, denom_col = denom_col)
+
+  fml <- as.formula(paste0("cbind(Success, Failure) ~ ", var, " + (1 | Study)"))
+  m <- glmer(fml, data = d, family = binomial, control = ctrl)
+
+  coefs <- summary(m)$coefficients
+  b0 <- unname(fixef(m)["(Intercept)"])
+  b1 <- unname(fixef(m)[var])
+  p0 <- plogis(b0)
+
+  p_col <- intersect(colnames(coefs), c("Pr(>|z|)", "Pr(>|t|)", "Pr(>|Chisq|)"))
+  pval  <- if (length(p_col)) unname(coefs[var, p_col[1]]) else NA_real_
+
+  tibble(
+    trajectory = sub("_n$", "", success_col),
+    predictor  = var,
+    Samples    = nobs(m),
+    prevalence_at_0_pct        = 100 * p0,
+    slope                      = b1,
+    marginal_delta_pp_per_unit = b1 * p0 * (1 - p0) * 100,
+    p_value                    = pval
+  )
+}
+
+# Fit one categorical moderator and return prevalence by level + Δ vs ref (pp) + p-values
+fit_cat <- function(data, var, keep = NULL, ref = NULL,
+                    success_col = "Low_n", denom_col = "Sample_Size") {
+  stopifnot(var %in% names(data))
+
+  d <- data %>%
+    filter(!is.na(.data[[var]])) %>%
+    { if (!is.null(keep)) filter(., .data[[var]] %in% keep) else . } %>%
+    mutate(
+      !!var := factor(.data[[var]]),
+      !!var := if (!is.null(ref) && ref %in% levels(.data[[var]]))
+                 fct_relevel(.data[[var]], ref)
+               else fct_drop(.data[[var]])
+    ) %>%
+    add_binom_cols(success_col = success_col, denom_col = denom_col)
+
+  if (nlevels(d[[var]]) < 2) return(tibble())  # nothing to compare
+
+  fml <- as.formula(paste0("cbind(Success, Failure) ~ ", var, " + (1 | Study)"))
+  m <- glmer(fml, data = d, family = binomial, control = ctrl)
+
+  fe <- fixef(m)
+  b0 <- unname(fe["(Intercept)"])
+  lvls <- levels(d[[var]])
+
+  # baseline = first level
+  add <- sapply(lvls, function(L) {
+    nm <- paste0(var, L)                 # e.g., "Trauma_typeNatural"
+    if (nm %in% names(fe)) fe[[nm]] else 0
+  })
+
+  s <- summary(m)$coefficients
+  pcol <- intersect(colnames(s), c("Pr(>|z|)", "Pr(>|t|)", "Pr(>|Chisq|)"))
+  pvals <- sapply(lvls, function(L) {
+    nm <- paste0(var, L)
+    if (nm %in% rownames(s)) unname(s[nm, pcol[1]]) else NA_real_  # ref has NA
+  })
+
+  p <- plogis(b0 + add)
+  p_ref <- p[1]
+
+  tibble(
+    trajectory      = sub("_n$", "", success_col),
+    moderator       = var,
+    n               = nobs(m),               # Samples (k)
+    ref_level       = lvls[1],
+    level           = lvls,
+    prevalence_pct  = 100 * p,
+    diff_vs_ref_pp  = 100 * (p - p_ref),
+    p_value         = pvals
+  )
+}
+```
+
 ## 🚀 Low Symptom Trajectory
 
 ```{r low-moderators-setup}
@@ -2119,3 +2248,4 @@ plogis(fixef(model)["(Intercept)"])  # Yes (reference)
 plogis(fixef(model)["(Intercept)"] + fixef(model)["factor(Health_First)No"])
 ```
 ---
+
