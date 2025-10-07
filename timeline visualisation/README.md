@@ -31,7 +31,7 @@ pip install matplotlib pandas numpy openpyxl
 ## Usage
 
 1.  Make sure the needed Excel file (`General_data.xlsx`) is in the `data` folder.
-2.  Ensure the file contains the required `Study` and `time_points`
+2.  Ensure the file contains the required `Study` and `Time_points`
     columns.
 3.  Run the Python script or Jupyter Notebook, updating the file path if
     needed (`data/General_data.xlsx`).
