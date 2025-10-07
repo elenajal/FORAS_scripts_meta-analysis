@@ -1,22 +1,22 @@
-# Timeline Visualization Plot
+# Timeline Visualisation Plot
 
 This repository contains Python code for generating timeline
-visualizations of timepoints employed in the included studies of the meta-analysis of prevalences of PTSD symptoms. 
+visualisations of timepoints employed in the included studies of the meta-analysis of prevalences of PTSD symptoms. 
 The script uses **matplotlib**, **pandas**, and **numpy** to display time points and ranges for different authors.
 
 ## Description
 
-The core of the project is a `Timeline` class that takes the following columns:
+The core of the project is a `Timeline` class that uses the following columns:
 
 -   **Study**: Name of the author or entity.
 -   **time_points**: A string of time points or ranges (e.g.,
     `"2, 5:8, 12"`).
 
 The script then plots these values on a timeline for each author,
-providing a clear overview of data collection periods across studies.
-The required data is available on **Dataverse**.
+providing a clear overview of PTSD symptom assessment periods across studies.
 
 ## Requirements
+The required data (`General_data.xlsx`) is available on **Dataverse**: <link>.
 
 Install the following Python libraries:
 
@@ -31,10 +31,10 @@ pip install matplotlib pandas numpy openpyxl
 
 ## Usage
 
-1.  Make sure the Excel file (`general_data.xlsx`) in the `data` folder.
+1.  Make sure the needed Excel file (`General_data.xlsx`) is in the `data` folder.
 2.  Ensure the file contains the required `Study` and `time_points`
     columns.
 3.  Run the Python script or Jupyter Notebook, updating the file path if
-    needed (`data/general_data.xlsx`).
+    needed (`data/General_data.xlsx`).
 4.  The output will be a timeline plot titled *"Measurement points of
     included studies"*.
