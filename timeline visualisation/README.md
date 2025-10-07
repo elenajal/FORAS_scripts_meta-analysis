@@ -9,8 +9,7 @@ The script uses **matplotlib**, **pandas**, and **numpy** to display time points
 The core of the project is a `Timeline` class that uses the following columns:
 
 -   **Study**: Name of the author or entity.
--   **time_points**: A string of time points or ranges (e.g.,
-    `"2, 5:8, 12"`).
+-   **Time_points**: The exact timepoint assessment moments (in months) per study (e.g., 1, 2, 4, 8, 16).
 
 The script then plots these values on a timeline for each author,
 providing a clear overview of PTSD symptom assessment periods across studies.
