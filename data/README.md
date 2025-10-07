@@ -38,6 +38,7 @@ This Codebook describes the meaning of the column names in the file "data_for_mo
 | Diagnostic_DSM | Whether the sample as assessed using DSM-III (3), DSM-IV (4), DSM-5 (5), ICD or mixed (Mix). |
 | Trajectory_analysis | Whether the final model selected in the study was latent growth mixture model (LGMM) or latent growth mixture analysis (LCGA). |
 | TP_assessments | Number of time-point assessments in the study. |
+| Time_points | The exact timepoint assessment moments (in months) per study (e.g., 1, 2, 4, 8, 16). |
 | N_trajectories | Number of trajectories reported in the paper. |
 | Trauma_TP1 | Number of months between traumatic event and the first timepoint assessment. |
 | TP1_TPX | Number of months between the first timepoint assessment and the last timepoint assessment. |
