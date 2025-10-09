@@ -1,39 +1,72 @@
 # Timeline Visualisation Plot
 
-This repository contains Python code for generating timeline
-visualisations of timepoints employed in the included studies of the meta-analysis of prevalences of PTSD symptoms. 
-The script uses **matplotlib**, **pandas**, and **numpy** to display time points and ranges for different authors.
+Python code to generate timeline visualisations of assessment timepoints in studies from a meta-analysis on PTSD symptom prevalence. Uses **matplotlib**, **pandas**, and **numpy** to plot points and ranges per study, optionally colour-coded by trauma type.
 
 ## Description
 
-The core of the project is a `Timeline` class that uses the following columns:
+The `Timeline` class expects:
 
--   **Study**: Name of the author and year, e.g., Lowe et al., 2020 or Allison & Berle, 2023. 
--   **Time_points**: The exact timepoint assessment moments (in months) per study (e.g., 1, 2, 4, 8, 16).
+- **Study** — study name and year (e.g., *Lowe et al., 2020*).  
+- **Time_points** — assessment timepoints in months (e.g., `1, 2, 4, 8, 16`).  
+- **Trauma_type** — one of *Natural*, *Injury*, *Combat*, *Other* for colour coding.
 
-The script then plots these values on a timeline for each author,
-providing a clear overview of PTSD symptom assessment periods across studies.
+It can render a single tall figure **or** a **split-panel** figure that distributes rows across multiple panels (ideal for papers/presentations), with control over columns, panel order, spacing, and saving to file.
 
 ## Requirements
-The required data (`General_data.xlsx`) is available on **Dataverse**: <link>.
 
-Install the following Python libraries:
+Data file (`General_data.xlsx`) is available on **DataVerseNL**: <link>.
 
-``` bash
+### Python packages (matching imports)
+
+```text
+matplotlib.pyplot as plt
+matplotlib as mpl
+matplotlib.lines.Line2D
+matplotlib.gridspec.GridSpec
+pandas as pd
+numpy as np
+re            # standard library
+math          # standard library
+```
+
+### Install
+
+```bash
 pip install matplotlib pandas numpy openpyxl
 ```
 
--   **matplotlib** -- for plotting
--   **pandas** -- for data handling
--   **numpy** -- for array operations
--   **openpyxl** -- for reading Excel files
+*(No install needed for `re` or `math`; they’re in the Python standard library.)*
 
 ## Usage
 
-1.  Make sure the needed Excel file (`General_data.xlsx`) is in the `data` folder.
-2.  Ensure the file contains the required `Study` and `Time_points`
-    columns.
-3.  Run the Python script or Jupyter Notebook, updating the file path if
-    needed (`data/General_data.xlsx`).
-4.  The output will be a timeline plot titled *"Measurement points of
-    included studies"*.
+1. Place `data/General_data.xlsx` in the repository.  
+2. Ensure it has `Study` and `Time_points` (optionally `Trauma_type`).  
+3. Run the script or notebook (adjust the path if needed).
+
+### Single figure
+
+```python
+import pandas as pd
+from timeline import Timeline
+
+data = pd.read_excel("data/General_data.xlsx")
+timeline = Timeline(data)
+timeline.show()
+```
+
+### Split into panels (papers/presentations)
+
+```python
+timeline = Timeline(data)
+timeline.show_split(
+    num_panels=2,
+    ncols=2,
+    reverse_panels=True,
+    savepath="timeline_two_panels.png",
+    panel_wspace=0.5,
+    row_step=10,
+    x_pad=0.05
+)
+```
+
+This produces a two-panel, two-column figure (reversed panel order), saved as `timeline_two_panels.png`.
