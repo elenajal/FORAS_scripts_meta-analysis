@@ -40,8 +40,8 @@ pip install matplotlib pandas numpy openpyxl
 ## Usage
 
 1. Place `data/General_data.xlsx` in the repository.  
-2. Ensure it has `Study` and `Time_points` (optionally `Trauma_type`).  
-3. Run the script or notebook (adjust the path if needed).
+2. Ensure it has `Study`, `Time_points` and `Trauma_type`.  
+3. Run the script or notebook.
 
 ### Single figure
 
@@ -49,7 +49,7 @@ pip install matplotlib pandas numpy openpyxl
 import pandas as pd
 from timeline import Timeline
 
-data = pd.read_excel("data/General_data.xlsx")
+data = pd.read_excel("../data/Data_extraction_model_results.xlsx")
 timeline = Timeline(data)
 timeline.show()
 ```
