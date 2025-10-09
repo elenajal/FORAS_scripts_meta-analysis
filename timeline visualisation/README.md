@@ -10,13 +10,13 @@ The `Timeline` class expects:
 - **Time_points** — assessment timepoints in months (e.g., `1, 2, 4, 8, 16`).  
 - **Trauma_type** — one of *Natural*, *Injury*, *Combat*, *Other* for colour coding.
 
-It can render a single tall figure **or** a **split-panel** figure that distributes rows across multiple panels (ideal for papers/presentations), with control over columns, panel order, spacing, and saving to file.
+It can render a **single tall figure** or a **split-panel** figure that distributes rows across multiple panels (ideal for papers/presentations), with control over columns, panel order, spacing, and saving to file.
 
 ## Requirements
 
-Data file (`General_data.xlsx`) is available on **DataVerseNL**: <link>.
+Data file (`Data_extraction_model_results.xlsx`) is available on **DataVerseNL**: <link>.
 
-### Python packages (matching imports)
+### Python packages
 
 ```text
 matplotlib.pyplot as plt
@@ -39,7 +39,7 @@ pip install matplotlib pandas numpy openpyxl
 
 ## Usage
 
-1. Place `data/General_data.xlsx` in the repository.  
+1. Place `data/Data_extraction_model_results.xlsx` in the repository.  
 2. Ensure it has `Study`, `Time_points` and `Trauma_type`.  
 3. Run the script or notebook.
 
@@ -69,4 +69,4 @@ timeline.show_split(
 )
 ```
 
-This produces a two-panel, two-column figure (reversed panel order), saved as `timeline_two_panels.png`.
+This produces a two-panel, two-column figure, saved as `timeline_two_panels.png`.
