@@ -1,13 +1,10 @@
-# Prevalences Meta-analysis (FORAS)
+# Prevalence Estimates for the Meta-analysis of PTSD Symptom Trajectories
 
 R Markdown workflow to compute and visualise pooled **prevalence** estimates for the FORAS project on PTSD trajectories after traumatic events. It loads study-level counts, runs meta-analyses of proportions, and exports publication-ready figures/tables. The script lives at:
 
 ```
 prevalences/Prevalences_analysis.Rmd
 ```
-
-> Repo context: scripts for the FORAS meta-analysis project (MIT licensed).
-
 ---
 
 ## What this does
