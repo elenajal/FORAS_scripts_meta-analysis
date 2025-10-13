@@ -48,7 +48,7 @@ The current repository is focusing on the scripts used for the meta-analysis (Pr
    - Reports effect sizes, CIs, heterogeneity (τ², I²), model fit
    - Produces forest/coef plots and summary tables to `moderators/output/`
   
-## `timeline_visualisation/`
+## `timeline_visualisation`
 - Located in `timeline visualisation/`
 - **Purpose**: Creates **timeline plots** of study assessments and follow-ups to visualise when PTSD trajectories were measured.  
 - **Features**:
@@ -57,7 +57,7 @@ The current repository is focusing on the scripts used for the meta-analysis (Pr
   - Helps contextualise follow-up timepoints across included studies
   - Outputs figures to `timeline visualisation/output/`
 
-## `worldmap_visualization/`
+## `worldmap_visualization`
 - Located in `worldmap visualization/`
 - **Purpose**: Generates a **world map** displaying the geographical distribution of included studies.  
 - **Features**:
@@ -88,8 +88,6 @@ python ./pre-processing/merge_tables.py
 
 This generates the combined dataset `pre-processing/output/data_for_moderation_analyses.csv`.
 
----
-
 ## Running Analyses
 
 Both R Markdown notebooks require the merged `data_for_moderation_analyses.csv` dataset:
@@ -98,8 +96,6 @@ Both R Markdown notebooks require the merged `data_for_moderation_analyses.csv` 
 - `moderators/Moderator_analysis.Rmd`
 
 Run them in RStudio or via `rmarkdown::render()` after ensuring `data_for_moderation_analyses.csv` is in the expected `pre-processing/output/` folder.
-
----
 
 ## Running Visualisations
 
@@ -122,8 +118,6 @@ Rscript worldmap_visualization.R
 
 - Requires: `data/Data_extraction_general_data.xlsx` 
 - Output: World map figures in `worldmap visualization/output/`
-
----
 
 # Funding 
 The research is supported by the Dutch Research Council under grant number 406.22.GO.048
