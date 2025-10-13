@@ -11,7 +11,7 @@ The current repository is focusing on the scripts used for the meta-analysis (Pr
 
 ## `merge_tables.py`
 
-- Within 'pre-processing' folder
+- Within `pre-processing` folder
 
 - **Purpose**: Combining three data files (`Data_extraction_general_data.xlsx`, `Data_extraction_model_results.xlsx`, `grolts_scores.csv`) into one (`data_for_moderation_analyses.csv`) for further analysis.
 
