@@ -83,9 +83,9 @@ The following dataset is required to run the analysis Rmd notebooks (`Prevalence
    - The primary dataset with all extracted data from the included studies.
    - Located in `./pre-processing/output`
 
-## Funding 
+# Funding 
 The research is supported by the Dutch Research Council under grant number 406.22.GO.048
 
-## Contact
+# Contact
 For questions contact Rens van de Schoot (a.g.j.vandeschoot@uu.nl) 
 
