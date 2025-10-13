@@ -72,34 +72,58 @@ The current repository is focusing on the scripts used for the meta-analysis (Pr
 
 ### Required Input Data for `merge_tables.py`
 
-The following data are required to create the dataset file for further analysis
+1. `Data_extraction_general_data.xlsx` – general extracted study data  
+2. `Data_extraction_model_results.xlsx` – model-specific results  
+3. `grolts_scores.csv` – GRoLTS scores (for details on calculation see: https://doi.org/10.5281/zenodo.17100045)
 
-1. **`Data_extraction_general_data.xlsx`**
-   - The general extracted data from the included studies
-2. **`Data_extraction_model_results.xlsx`**
-   - The model specific data from the included studies
-3. **`grolts_scores.csv`**
-   - The GRoLTS scores (see: https://doi.org/10.5281/zenodo.17100045).
+### Running the Merging Script
 
-### Running Merging Script
+```bash
+git clone https://github.com/yourusername/FORAS_scripts_meta-analysis.git
+cd FORAS_scripts_meta-analysis
 
-1. Place the three data files in the `data/` directory at the root of the repository to ensure the notebooks can locate them.
+# Run merging script
+python ./pre-processing/merge_tables.py
+```
 
-Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/FORAS_scripts_meta-analysis.git
-   cd FORAS_scripts_meta-analysis
-   ```
+This generates the combined dataset `pre-processing/output/data_for_moderation_analyses.csv`.
 
-2. Run the Python file `./pre-processing/merge_tables.py`.
+---
 
-## Required Input Data for Analysis
+## Running Analyses
 
-The following dataset is required to run the analysis Rmd notebooks (`Prevalences_analysis.Rmd` and `Moderator_analysis.Rmd`:
+Both R Markdown notebooks require the merged `data_for_moderation_analyses.csv` dataset:
 
-1. **`data_for_moderation_analyses.csv`**
-   - The primary dataset with all extracted data from the included studies.
-   - Located in `./pre-processing/output`
+- `prevalences/Prevalences_analysis.Rmd`
+- `moderators/Moderator_analysis.Rmd`
+
+Run them in RStudio or via `rmarkdown::render()` after ensuring `data_for_moderation_analyses.csv` is in the expected `pre-processing/output/` folder.
+
+---
+
+## Running Visualisations
+
+### Timeline Visualisation
+
+```bash
+cd "timeline visualisation"
+Rscript timeline_visualisation.R
+```
+
+- Requires: `data/Data_extraction_model_results.xlsx`  
+- Output: Timeline plots in `timeline visualisation/output/`
+
+### Worldmap Visualisation
+
+```bash
+cd "worldmap visualization"
+Rscript worldmap_visualization.R
+```
+
+- Requires: `data/Data_extraction_general_data.xlsx` 
+- Output: World map figures in `worldmap visualization/output/`
+
+---
 
 # Funding 
 The research is supported by the Dutch Research Council under grant number 406.22.GO.048
