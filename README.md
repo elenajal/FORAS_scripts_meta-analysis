@@ -77,6 +77,7 @@ The current repository is focusing on the scripts used for the meta-analysis (Pr
 3. `grolts_scores.csv` – GRoLTS scores (for details on calculation see: https://doi.org/10.5281/zenodo.17100045)
 
 These datasets will be made available on DataVerseNL.
+Download the datasets and place them in the `data/` directory at the root of the repository to ensure the notebooks can locate them.
 
 ### Running the Merging Script
 
