@@ -26,7 +26,7 @@ The current repository is focusing on the scripts used for the meta-analysis (Pr
 
 - Located within `prevalences` folder
 
-- **Purpose**: R Markdown workflow to compute and visualise pooled **prevalence** estimates for the FORAS project on PTSD trajectories after traumatic events. It loads study-level counts, runs meta-analyses of proportions, and exports publication-ready figures/tables.
+- **Purpose**: R Markdown workflow to compute and visualise pooled **prevalence** estimates for the FORAS project on PTSD trajectories after traumatic events.
 
 - **Features**:
    - Reads extracted study data (events / totals)
@@ -39,7 +39,7 @@ The current repository is focusing on the scripts used for the meta-analysis (Pr
 
 - Located within `moderators` folder
 
-- **Purpose**: R Markdown workflow to run **moderator / meta‑regression analyses** for the FORAS meta‑analysis of PTSD trajectories. It loads the harmonised study dataset, defines candidate moderators, fits random‑effects models, and exports publication‑ready tables/figures.
+- **Purpose**: R Markdown workflow to run **moderator / meta‑regression analyses** for the FORAS meta‑analysis of PTSD trajectories. 
 
 - **Features**:
    - Loads cleaned study‑level data (events, totals, study descriptors)
