@@ -22,6 +22,24 @@ The current repository is focusing on the scripts used for the meta-analysis (Pr
    - Test whether each record can be matched correctly between the three files
    - Outputs the `data_for_moderation_analyses.csv` in the `./pre-processing/output` folder
 
+## `Prevalences_analysis.Rmd`
+
+- Located within `prevalences` folder
+
+- **Purpose**: R Markdown workflow to compute and visualise pooled **prevalence** estimates for the FORAS project on PTSD trajectories after traumatic events. It loads study-level counts, runs meta-analyses of proportions, and exports publication-ready figures/tables.
+
+- **Features**:
+   - Reads extracted study data (events / totals)
+   - Computes pooled prevalence (random-effects), with common transformations for proportions
+   - Quantifies heterogeneity (τ², I²) and influence diagnostics
+   - Produces forest and (optionally) funnel-type plots
+   - Writes summaries/plots to `prevalences/output/`
+
+- **Requirements**:
+  **`data_for_moderation_analyses.csv`**
+            - The primary dataset with all extracted data from the included studies.
+            - Located in `./pre-processing/output`
+  
 # Load the data
 
 ## Required Input Data for `merge_tables.py`
