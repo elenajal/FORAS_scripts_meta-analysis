@@ -11,7 +11,7 @@ The current repository is focusing on the scripts used for the meta-analysis (Pr
 
 ## `merge_tables.py`
 
-- Within `pre-processing` folder
+- Located in `pre-processing/`
 
 - **Purpose**: Combining the three data files (`Data_extraction_general_data.xlsx`, `Data_extraction_model_results.xlsx`, `grolts_scores.csv`) into one (`data_for_moderation_analyses.csv`) for further analysis.
 
@@ -24,7 +24,7 @@ The current repository is focusing on the scripts used for the meta-analysis (Pr
 
 ## `Prevalences_analysis.Rmd`
 
-- Located within `prevalences` folder
+- Located in `prevalences/`
 
 - **Purpose**: R Markdown workflow to compute and visualise pooled **prevalence** estimates for the FORAS project on PTSD trajectories after traumatic events.
 
@@ -37,7 +37,7 @@ The current repository is focusing on the scripts used for the meta-analysis (Pr
 
 ## `Moderator_analysis.Rmd`
 
-- Located within `moderators` folder
+- Located in `moderators/`
 
 - **Purpose**: R Markdown workflow to run **moderator / meta‑regression analyses** for the FORAS meta‑analysis of PTSD trajectories. 
 
