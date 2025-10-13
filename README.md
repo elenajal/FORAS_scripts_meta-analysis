@@ -76,6 +76,8 @@ The current repository is focusing on the scripts used for the meta-analysis (Pr
 2. `Data_extraction_model_results.xlsx` – model-specific results  
 3. `grolts_scores.csv` – GRoLTS scores (for details on calculation see: https://doi.org/10.5281/zenodo.17100045)
 
+These datasets will be made available on DataVerseNL.
+
 ### Running the Merging Script
 
 ```bash
