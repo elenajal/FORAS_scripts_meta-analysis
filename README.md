@@ -77,7 +77,7 @@ Clone the repository:
 
 ## Required Input Data for Analysis
 
-The following dataset is required to run the analysis Rmd notebooks:
+The following dataset is required to run the analysis Rmd notebooks (`Prevalences_analysis.Rmd` and `Moderator_analysis.Rmd`:
 
 1. **`data_for_moderation_analyses.csv`**
    - The primary dataset with all extracted data from the included studies.
