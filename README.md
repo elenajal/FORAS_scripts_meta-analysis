@@ -13,7 +13,7 @@ The current repository is focusing on the scripts used for the meta-analysis (Pr
 
 - Within `pre-processing` folder
 
-- **Purpose**: Combining three data files (`Data_extraction_general_data.xlsx`, `Data_extraction_model_results.xlsx`, `grolts_scores.csv`) into one (`data_for_moderation_analyses.csv`) for further analysis.
+- **Purpose**: Combining the three data files (`Data_extraction_general_data.xlsx`, `Data_extraction_model_results.xlsx`, `grolts_scores.csv`) into one (`data_for_moderation_analyses.csv`) for further analysis.
 
 - **Features**:
    - Merge the three data files
@@ -35,11 +35,6 @@ The current repository is focusing on the scripts used for the meta-analysis (Pr
    - Produces forest and (optionally) funnel-type plots
    - Writes summaries/plots to `prevalences/output/`
 
-- **Requirements**:
-  **`data_for_moderation_analyses.csv`**
-            - The primary dataset with all extracted data from the included studies.
-            - Located in `./pre-processing/output`
-
 ## `Moderator_analysis.Rmd`
 
 - Located within `moderators` folder
@@ -53,9 +48,11 @@ The current repository is focusing on the scripts used for the meta-analysis (Pr
    - Reports effect sizes, CIs, heterogeneity (τ², I²), model fit
    - Produces forest/coef plots and summary tables to `moderators/output/`
   
-# Load the data
+# Usage
 
-## Required Input Data for `merge_tables.py`
+## Load Data
+
+### Required Input Data for `merge_tables.py`
 
 The following data are required to create the dataset file for further analysis
 
@@ -66,25 +63,25 @@ The following data are required to create the dataset file for further analysis
 3. **`grolts_scores.csv`**
    - The GRoLTS scores (see: https://doi.org/10.5281/zenodo.17100045).
 
+### Running Merging Script
+
+1. Place the three data files in the `data/` directory at the root of the repository to ensure the notebooks can locate them.
+
+Clone the repository:
+   ```bash
+   git clone https://github.com/yourusername/FORAS_scripts_meta-analysis.git
+   cd FORAS_scripts_meta-analysis
+   ```
+
+2. Run the Python file `./pre-processing/merge_tables.py`.
+
 ## Required Input Data for Analysis
 
-The following datasets are required to run the notebooks:
+The following dataset is required to run the analysis Rmd notebooks:
 
 1. **`data_for_moderation_analyses.csv`**
    - The primary dataset with all extracted data from the included studies.
    - Located in `./pre-processing/output`
-
-## Usage
-
-1. Place these files in a `data/` directory at the root of the repository to ensure the notebooks can locate them.
-
-Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/hunt-for-the-last-relevant-paper.git
-   cd hunt-for-the-last-relevant-paper
-   ```
-
-2. Run the Python file `./pre-processing/merge_tables.py`.
 
 ## Funding 
 The research is supported by the Dutch Research Council under grant number 406.22.GO.048
