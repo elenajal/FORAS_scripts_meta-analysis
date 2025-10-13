@@ -48,6 +48,24 @@ The current repository is focusing on the scripts used for the meta-analysis (Pr
    - Reports effect sizes, CIs, heterogeneity (τ², I²), model fit
    - Produces forest/coef plots and summary tables to `moderators/output/`
   
+## `timeline_visualisation/`
+- Located in `timeline visualisation/`
+- **Purpose**: Creates **timeline plots** of study assessments and follow-ups to visualise when PTSD trajectories were measured.  
+- **Features**:
+  - Reads dataset (`Data_extraction_model_results.xlsx`) from `data/` directory
+  - Produces timeline graphics for each study or aggregated across studies
+  - Helps contextualise follow-up timepoints across included studies
+  - Outputs figures to `timeline visualisation/output/`
+
+## `worldmap_visualization/`
+- Located in `worldmap visualization/`
+- **Purpose**: Generates a **world map** displaying the geographical distribution of included studies.  
+- **Features**:
+  - Reads dataset (`Data_extraction_general_data.xlsx`) from `data/` directory
+  - Maps study locations by country
+  - Highlights global spread and potential clustering of research
+  - Outputs figures to `worldmap visualization/output/`
+
 # Usage
 
 ## Load Data
