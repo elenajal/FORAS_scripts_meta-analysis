@@ -1208,6 +1208,24 @@ make_group_table(tr_res_Increasing, "Increasing Symptom Trajectory: Trauma-Relat
 make_group_table(md_res_Increasing, "Increasing Symptom Trajectory: Methodological Moderators")
 make_group_table(all_Increasing_res, "Increasing Symptom Trajectory: All Moderators")
 ```
+## 🚀 Decreasing Symptom Trajectory
+
+```{r Decreasing-mods-fitting}
+# Run the three groups for this trajectory
+bg_res_Decreasing <- run_group(df_Decreasing, success_col = "Decreasing_n", denom_col = "Sample_Size", vars = background_vars)
+tr_res_Decreasing <- run_group(df_Decreasing, success_col = "Decreasing_n", denom_col = "Sample_Size", vars = trauma_vars)
+md_res_Decreasing <- run_group(df_Decreasing, success_col = "Decreasing_n", denom_col = "Sample_Size", vars = method_vars)
+
+all_vars <- c(background_vars, trauma_vars, method_vars)
+all_Decreasing_res <- run_group(df_Decreasing, success_col = "Decreasing_n", denom_col = "Sample_Size", vars = all_vars)
+```
+
+```{r Decreasing-mods-tables}
+make_group_table(bg_res_Decreasing, "Decreasing Symptom Trajectory: Socio-Demographic Moderators")
+make_group_table(tr_res_Decreasing, "Decreasing Symptom Trajectory: Trauma-Related Moderators")
+make_group_table(md_res_Decreasing, "Decreasing Symptom Trajectory: Methodological Moderators")
+make_group_table(all_Decreasing_res, "Decreasing Symptom Trajectory: All Moderators")
+```
 
 # Tables for Paper
 ## Continuous Moderators Summary Table
@@ -1330,6 +1348,7 @@ if (length(fit_names) == 0) {
 }
 ```
 ---
+
 
 
 
