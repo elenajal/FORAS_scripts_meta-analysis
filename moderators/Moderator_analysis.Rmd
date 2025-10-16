@@ -1245,6 +1245,25 @@ make_group_table(md_res_High, "High Symptom Trajectory: Methodological Moderator
 make_group_table(all_High_res, "High Symptom Trajectory: All Moderators")
 ```
 
+## 🚀 Moderate Symptom Trajectory
+
+```{r Moderate-mods-fitting}
+# Run the three groups for this trajectory
+bg_res_Moderate <- run_group(df_Moderate, success_col = "Moderate_n", denom_col = "Sample_Size", vars = background_vars)
+tr_res_Moderate <- run_group(df_Moderate, success_col = "Moderate_n", denom_col = "Sample_Size", vars = trauma_vars)
+md_res_Moderate <- run_group(df_Moderate, success_col = "Moderate_n", denom_col = "Sample_Size", vars = method_vars)
+
+all_vars <- c(background_vars, trauma_vars, method_vars)
+all_Moderate_res <- run_group(df_Moderate, success_col = "Moderate_n", denom_col = "Sample_Size", vars = all_vars)
+```
+
+```{r Moderate-mods-tables}
+make_group_table(bg_res_Moderate, "Moderate Symptom Trajectory: Socio-Demographic Moderators")
+make_group_table(tr_res_Moderate, "Moderate Symptom Trajectory: Trauma-Related Moderators")
+make_group_table(md_res_Moderate, "Moderate Symptom Trajectory: Methodological Moderators")
+make_group_table(all_Moderate_res, "Moderate Symptom Trajectory: All Moderators")
+```
+
 # Tables for Paper
 ## Continuous Moderators Summary Table
 
@@ -1366,6 +1385,7 @@ if (length(fit_names) == 0) {
 }
 ```
 ---
+
 
 
 
