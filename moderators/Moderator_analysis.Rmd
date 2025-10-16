@@ -1226,6 +1226,24 @@ make_group_table(tr_res_Decreasing, "Decreasing Symptom Trajectory: Trauma-Relat
 make_group_table(md_res_Decreasing, "Decreasing Symptom Trajectory: Methodological Moderators")
 make_group_table(all_Decreasing_res, "Decreasing Symptom Trajectory: All Moderators")
 ```
+## 🚀 High Symptom Trajectory
+
+```{r High-mods-fitting}
+# Run the three groups for this trajectory
+bg_res_High <- run_group(df_High, success_col = "High_n", denom_col = "Sample_Size", vars = background_vars)
+tr_res_High <- run_group(df_High, success_col = "High_n", denom_col = "Sample_Size", vars = trauma_vars)
+md_res_High <- run_group(df_High, success_col = "High_n", denom_col = "Sample_Size", vars = method_vars)
+
+all_vars <- c(background_vars, trauma_vars, method_vars)
+all_High_res <- run_group(df_High, success_col = "High_n", denom_col = "Sample_Size", vars = all_vars)
+```
+
+```{r High-mods-tables}
+make_group_table(bg_res_High, "High Symptom Trajectory: Socio-Demographic Moderators")
+make_group_table(tr_res_High, "High Symptom Trajectory: Trauma-Related Moderators")
+make_group_table(md_res_High, "High Symptom Trajectory: Methodological Moderators")
+make_group_table(all_High_res, "High Symptom Trajectory: All Moderators")
+```
 
 # Tables for Paper
 ## Continuous Moderators Summary Table
@@ -1348,6 +1366,7 @@ if (length(fit_names) == 0) {
 }
 ```
 ---
+
 
 
 
