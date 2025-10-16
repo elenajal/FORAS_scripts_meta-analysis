@@ -1190,7 +1190,7 @@ make_group_table(tr_res_Low, "Low Symptom Trajectory: Trauma-Related Moderators"
 make_group_table(md_res_Low, "Low Symptom Trajectory: Methodological Moderators")
 make_group_table(all_Low_res, "Low Symptom Trajectory: All Moderators")
 ```
-## Increasing Symptom Trajectory
+## ⚠️ Increasing Symptom Trajectory
 
 ```{r Increasing-mods-fitting}
 # Run the three groups for this trajectory
@@ -1208,7 +1208,7 @@ make_group_table(tr_res_Increasing, "Increasing Symptom Trajectory: Trauma-Relat
 make_group_table(md_res_Increasing, "Increasing Symptom Trajectory: Methodological Moderators")
 make_group_table(all_Increasing_res, "Increasing Symptom Trajectory: All Moderators")
 ```
-## 🚀 Decreasing Symptom Trajectory
+## 🌿 Decreasing Symptom Trajectory
 
 ```{r Decreasing-mods-fitting}
 # Run the three groups for this trajectory
@@ -1226,7 +1226,7 @@ make_group_table(tr_res_Decreasing, "Decreasing Symptom Trajectory: Trauma-Relat
 make_group_table(md_res_Decreasing, "Decreasing Symptom Trajectory: Methodological Moderators")
 make_group_table(all_Decreasing_res, "Decreasing Symptom Trajectory: All Moderators")
 ```
-## 🚀 High Symptom Trajectory
+## 🩸 High Symptom Trajectory
 
 ```{r High-mods-fitting}
 # Run the three groups for this trajectory
@@ -1245,7 +1245,7 @@ make_group_table(md_res_High, "High Symptom Trajectory: Methodological Moderator
 make_group_table(all_High_res, "High Symptom Trajectory: All Moderators")
 ```
 
-## 🚀 Moderate Symptom Trajectory
+## 🌗 Moderate Symptom Trajectory
 
 ```{r Moderate-mods-fitting}
 # Run the three groups for this trajectory
@@ -1385,6 +1385,7 @@ if (length(fit_names) == 0) {
 }
 ```
 ---
+
 
 
 
