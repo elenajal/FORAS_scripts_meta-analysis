@@ -37,6 +37,8 @@ library(dplyr)
 library(purrr)
 library(stringr)
 library(tidyr)
+library(flextable)
+library(officer)
 ```
 
 ## Load Data
@@ -1314,6 +1316,22 @@ tbl_all_utf8 %>%
   ) %>%
   tab_options(table.width = pct(100)) %>%
   opt_table_font(font = "Times New Roman") 
+
+# export to word
+df <- tbl_all_utf8
+
+ft <- flextable(df)
+ft <- width(ft, j = "Predictor", width = 2.2)
+ft <- align(ft, j = setdiff(names(df), "Predictor"), align = "center", part = "all")
+ft <- align(ft, j = "Predictor", align = "left", part = "all")
+ft <- bold(ft, part = "header")
+ft <- font(ft, fontname = "Times New Roman", part = "all")
+ft <- autofit(ft)
+
+doc <- read_docx()
+doc <- body_add_flextable(doc, ft)
+doc <- body_end_section_landscape(doc)
+print(doc, target = "Continuous_Moderator_Table.docx")
 ```
 
 ## Categorical Moderators Summary Table
@@ -1358,8 +1376,8 @@ if (length(fit_names) == 0) {
       Predictor,
       `Samples (k)`,
       `Reference (Name)`,
-      `Comparison (Name)`,
       `Reference Prevalence`,
+      `Comparison (Name)`,
       `Comparison Prevalence`,
       !!delta_col,
       `p-value`
@@ -1383,12 +1401,21 @@ if (length(fit_names) == 0) {
   tab_options(table.width = pct(100)) %>%
   opt_table_font(font = "Times New Roman") 
 }
+
+# export to word
+df2 <-  long_table_data
+
+ft <- flextable(df2)
+ft <- width(ft, j = "Predictor", width = 2.2)
+ft <- align(ft, j = setdiff(names(df2), "Predictor"), align = "center", part = "all")
+ft <- align(ft, j = "Predictor", align = "left", part = "all")
+ft <- bold(ft, part = "header")
+ft <- font(ft, fontname = "Times New Roman", part = "all")
+ft <- autofit(ft)
+
+doc <- read_docx()
+doc <- body_add_flextable(doc, ft)
+doc <- body_end_section_landscape(doc)
+print(doc, target = "Categorical_Moderator_Table.docx")
 ```
 ---
-
-
-
-
-
-
-
