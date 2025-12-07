@@ -55,6 +55,52 @@ df_moderation <- df_moderation %>%
 head(df_moderation)
 ```
 
+## Prepare Trajectory Datasets
+
+To analyse each symptom trajectory separately, we generate dedicated datasets in which the corresponding trajectory count and sample information are explicitly available. This step does not change the underlying data but clarifies the structure for later regression analyses and descriptive summaries. Each trajectory dataset also provides basic information about the total number of individuals and the number of contributing samples, grounding the modelling in a clear empirical context.
+
+```{r trajectories}
+trajectory_setup <- function(df, traj) {
+  
+  # Column names
+  perc_col <- paste0(traj, "_percentage")
+  n_col    <- paste0(traj, "_n")
+  
+  df_out <- df %>%
+    filter(!is.na(.data[[perc_col]])) %>%
+    mutate(!!n_col := round((.data[[perc_col]] / 100) * Sample_Size))
+  
+  return(df_out)
+}
+
+df_Low <- trajectory_setup(df_moderation, "Low")
+df_Decreasing <- trajectory_setup(df_moderation, "Decreasing")
+df_Increasing <- trajectory_setup(df_moderation, "Increasing")
+df_High <- trajectory_setup(df_moderation, "High")
+df_Moderate <- trajectory_setup(df_moderation, "Moderate")
+
+trajectory_descriptives <- function(df_traj, traj) {
+  
+  n_col <- paste0(traj, "_n")
+  
+  total_n <- sum(df_traj[[n_col]], na.rm = TRUE)
+  unique_samples <- length(unique(df_traj$Study))
+  
+  additional_info <- data.frame(
+    Description = c(
+      paste0("Total number of individuals in ", traj, " trajectory"),
+      "Number of unique samples"
+    ),
+    Value = format(c(total_n, unique_samples), big.mark = ",")
+  )
+  
+  knitr::kable(
+    additional_info,
+    caption = paste("Additional Descriptives for", traj, "Trajectory Analysis")
+  )
+}
+```
+
 ## Descriptive Statistics
 
 We provide basic descriptive statistics of the included studies, without excluding any data due to missingness.
@@ -1403,4 +1449,5 @@ doc <- body_end_section_landscape(doc)
 print(doc, target = "Categorical_Moderator_Table.docx")
 ```
 ---
+
 
