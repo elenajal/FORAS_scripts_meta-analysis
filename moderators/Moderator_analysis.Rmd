@@ -55,6 +55,52 @@ df_moderation <- df_moderation %>%
 head(df_moderation)
 ```
 
+## Prepare Trajectory Datasets
+
+To analyse each symptom trajectory separately, we generate dedicated datasets in which the corresponding trajectory count and sample information are explicitly available. This step does not change the underlying data but clarifies the structure for later regression analyses and descriptive summaries. Each trajectory dataset also provides basic information about the total number of individuals and the number of contributing samples, grounding the modelling in a clear empirical context.
+
+```{r trajectories}
+trajectory_setup <- function(df, traj) {
+  
+  # Column names
+  perc_col <- paste0(traj, "_percentage")
+  n_col    <- paste0(traj, "_n")
+  
+  df_out <- df %>%
+    filter(!is.na(.data[[perc_col]])) %>%
+    mutate(!!n_col := round((.data[[perc_col]] / 100) * Sample_Size))
+  
+  return(df_out)
+}
+
+df_Low <- trajectory_setup(df_moderation, "Low")
+df_Decreasing <- trajectory_setup(df_moderation, "Decreasing")
+df_Increasing <- trajectory_setup(df_moderation, "Increasing")
+df_High <- trajectory_setup(df_moderation, "High")
+df_Moderate <- trajectory_setup(df_moderation, "Moderate")
+
+trajectory_descriptives <- function(df_traj, traj) {
+  
+  n_col <- paste0(traj, "_n")
+  
+  total_n <- sum(df_traj[[n_col]], na.rm = TRUE)
+  unique_samples <- length(unique(df_traj$Study))
+  
+  additional_info <- data.frame(
+    Description = c(
+      paste0("Total number of individuals in ", traj, " trajectory"),
+      "Number of unique samples"
+    ),
+    Value = format(c(total_n, unique_samples), big.mark = ",")
+  )
+  
+  knitr::kable(
+    additional_info,
+    caption = paste("Additional Descriptives for", traj, "Trajectory Analysis")
+  )
+}
+```
+
 ## Descriptive Statistics
 
 We provide basic descriptive statistics of the included studies, without excluding any data due to missingness.
@@ -73,10 +119,20 @@ summary_table <- data.frame(
 # Display as a table
 knitr::kable(summary_table, caption = "Descriptive Statistics of the Dataset")
 ```
+# Moderators
 
-# Substantive Models
-## Setup
-```{r substantive-mods-setup-functions}
+The analyses examine a broad set of potential moderators that may explain differences in the prevalence of specific PTSD symptom trajectories. Moderators are grouped into three conceptual domains, and are listed below using descriptive labels; categorical levels and reference categories appear in parentheses.
+
+**Background variables**
+Country income (Levels: High income countries; Mid-, low-income); Developmental age (Levels: Adult, Youth); Education (%); Having a partner (%); Mean age; Minorities (%); Percentage of women; US vs Non-US (Levels: Non-US, US)
+
+**Trauma-related variables**
+Civilian vs Military (Levels: Civilian, Military); Discrete vs non-discrete trauma (Levels: Non-discrete, Discrete); HP/First responder vs other (Levels: HP/First responder, Other); Occupational trauma (Levels: No, Yes); Trauma exposure (Levels: Interpersonal trauma, Non-interpersonal trauma); Trauma nature (Levels: Combat, Injury, Natural disaster)
+
+**Methodological variables**
+Diagnostic Criteria (Levels: DSM-IV, DSM-5); Entropy; LGMM vs LCGA (Levels: LCGA, LGMM); Number of trajectories; PTSD symptom assessment (Levels: Interview, Self-reported scale); Quality score; Sample size / 100; Time between trauma and first assessment (months); Time between trauma and last assessment (months); Time point PTSD assessments (number); Time span of the study (months)
+
+```{r substantive-groups-setup}
 background_vars <- c(
   "Mean_age", "Developmental_age","Percentage_women", "Percentage_minority", "Percentage_partner", "High_education", "Location", "Location_US"
   )
@@ -87,71 +143,329 @@ trauma_vars <- c(
 
 method_vars <- c(
   "Sample_Size_100", "Grolts", "Entropy", "Scale_moderator", "Diagnostic_DSM", "Trajectory_analysis", "TP_assessments", "N_trajectories",
-  "Trauma_TP1", "TP1_TPX", "Trauma_TPX"
+  "Trauma_TP1", "Trauma_TPX", "TP1_TPX"
   )
 
-.ctrl <- ctrl # Use the pre-defined 'ctrl'
+all_substantive_vars <- c(background_vars, trauma_vars, method_vars)
 
-# Check if a variable is categorical using the pre-defined list from 'mods-setup-functions'
-is_categorical <- function(v) {
-  v %in% sapply(cat_vars, `[[`, "var")
+# Centralized Moderator Specifications
+MOD_SPECS <- list(
+  list(var="Percentage_women",      type="cont", label="Percentage of women"),
+  list(var="Mean_age",              type="cont", label="Mean age"),
+  list(var="Percentage_minority",   type="cont", label="Minorities (%)"),
+  list(var="Percentage_partner",    type="cont", label="Having a partner (%)"),
+  list(var="High_education",        type="cont", label="Education (%)"),
+  list(var="TP_assessments",        type="cont", label="Time point PTSD assessments (number)"),
+  list(var="N_trajectories",        type="cont", label="Number of trajectories"),
+  list(var="Trauma_TP1",            type="cont", label="Time between trauma and first assessment (months)"),
+  list(var="TP1_TPX",               type="cont", label="Time span of the study (months)"),
+  list(var="Trauma_TPX",            type="cont", label="Time between trauma and last assessment (months)"),
+  list(var="Entropy",               type="cont", label="Entropy"),
+  list(var="Grolts",                type="cont", label="Quality score"),
+  list(var="Sample_Size_100",       type="cont", label="Sample size / 100"),
+
+  list(var="Diagnostic_DSM",        type="cat",  label="Diagnostic Criteria",
+       keep=c("4","5"), ref="4",
+       levels=c(`4`="DSM-IV", `5`="DSM-5")),
+
+  list(var="Occupational_trauma",   type="cat", label="Occupational trauma",
+       keep=c("No","Yes"), ref="No",
+       levels=c(No="No", Yes="Yes")),
+
+  list(var="Developmental_age",     type="cat", label="Developmental age",
+       keep=c("Adult","Youth"), ref="Adult",
+       levels=c(Adult="Adult", Youth="Youth")),
+
+  list(var="Location",              type="cat", label="Country income",
+       levels=c("High income countries"="High income countries",
+                "High"="High income countries",
+                "Mid-, low- income"="Mid-, low- income",
+                "Mid/low income"="Mid-, low- income")),
+
+  list(var="Location_US",           type="cat", label="US vs Non-US", ref="Other",
+       levels=c(Other="Non-US", US="US")),
+
+  list(var="Trajectory_analysis",   type="cat", label="LGMM vs LCGA",
+       levels=c(LCGA="LCGA", LGMM="LGMM")),
+
+  list(var="Scale_moderator",        type="cat", label="PTSD symptom assessment",
+       keep=c("Interview","Self"), ref="Interview",
+       levels=c(Interview="Interview", Self="Self-reported scale")),
+
+  list(var="Trauma_exposure",       type="cat", label="Trauma exposure",
+       keep=c("Inter","Non"), ref="Inter",
+       levels=c(Inter="Interpersonal trauma", Non="Non-interpersonal trauma")),
+
+  list(
+    var="Trauma_type",
+    type="cat",
+    label="Trauma nature",
+    keep=c("Combat","Natural","Injury"), 
+    ref="Combat",
+    levels=c(
+      Combat      = "Combat",
+      Injury      = "Injury",
+      Natural     = "Natural disaster",
+      "Natural "  = "Natural disaster"   # map trailing-space version
+    )
+  ),
+
+  list(var="Military",              type="cat", label="Civilian vs Military", ref="No",
+       levels=c(No="Civilian", Yes="Military")),
+
+  list(var="Discrete",              type="cat", label="Discrete vs non-discrete trauma",
+       keep=c("No","Yes"), ref="No",
+       levels=c(No="Non-discrete", Yes="Discrete")),
+
+  list(var="Health_First",          type="cat", label="HP/First responders vs other",
+       keep=c("Yes","No"), ref="Yes",
+       levels=c(Yes="HP/First responder", No="Other"))
+)
+
+MOD_LABELS <- purrr::map_chr(MOD_SPECS, "label") |>
+  setNames(purrr::map_chr(MOD_SPECS, "var"))
+
+CAT_SPECS <- MOD_SPECS[sapply(MOD_SPECS, `[[`, "type") == "cat"]
+names(CAT_SPECS) <- sapply(CAT_SPECS, `[[`, "var")
+
+LEVEL_MAP <- purrr::map_dfr(MOD_SPECS, \(spec) {
+  if (is.null(spec$levels)) return(NULL)
+  tibble::tibble(
+    moderator = spec$var,
+    orig      = names(spec$levels),
+    pretty    = unname(spec$levels),
+    stan      = gsub("[^A-Za-z0-9]", "", names(spec$levels))
+  )
+})
+
+```
+
+Below we present a summary of all moderators included in the analysis, describing whether they are continuous or categorical, as well as main descriptives concerning the variables.
+
+```{r moderator-summary-gt, message=FALSE}
+mod_df <- tibble::tibble(
+  var    = purrr::map_chr(MOD_SPECS, "var"),
+  type   = purrr::map_chr(MOD_SPECS, "type"),
+  label  = purrr::map_chr(MOD_SPECS, "label"),
+  keep   = purrr::map(MOD_SPECS, "keep"),
+  levels = purrr::map(MOD_SPECS, "levels")
+)
+
+cont_vars <- mod_df %>% filter(type == "cont") %>% pull(var)
+cat_vars  <- mod_df %>% filter(type == "cat")  %>% pull(var)
+
+#  Continuous summaries
+cont_summary <- df_moderation %>%
+  select(any_of(cont_vars)) %>%
+  pivot_longer(everything(), names_to = "var", values_to = "value") %>%
+  group_by(var) %>%
+  summarise(
+    Mean = mean(value, na.rm = TRUE),
+    SD   = sd(value, na.rm = TRUE),
+    Min  = min(value, na.rm = TRUE),
+    Max  = max(value, na.rm = TRUE),
+    Summary = glue("{round(Mean,2)} (SD = {round(SD,2)}), {round(Min,2)}–{round(Max,2)}"),
+    .groups = "drop"
+  ) %>%
+  left_join(mod_df, by = "var") %>%
+  transmute(
+    Variable = label,
+    Type = "Continuous",
+    Summary
+  )
+
+# Categorical summaries
+cat_summary <- map_dfr(cat_vars, function(v) {
+
+  spec <- mod_df %>% filter(var == v) %>% slice(1)
+
+  x <- df_moderation[[v]]
+  if (all(is.na(x))) return(NULL)
+
+  # Recode
+  if (!is.null(spec$levels[[1]])) {
+    x <- recode(as.character(x), !!!spec$levels[[1]])
+  }
+
+  # Apply KEEP filter
+  if (!is.null(spec$keep[[1]])) {
+    x <- x[x %in% spec$keep[[1]]]
+    if (length(x) == 0) return(NULL)
+  }
+
+  tab  <- table(x)
+  prop <- prop.table(tab)
+
+  tibble(
+    Variable = spec$label,
+    Type     = "Categorical",
+    Summary  = paste0(
+      names(tab), ": ",
+      as.integer(tab), " (", round(100 * as.numeric(prop), 1), "%)",
+      collapse = "; "
+    )
+  )
+})
+
+
+combined_table <- bind_rows(cont_summary, cat_summary)
+
+# GT rendering
+gt_summary <- combined_table %>%
+  gt() %>%
+  tab_header(
+    title = md("**Moderator Descriptive Summary**"),
+    subtitle = "Continuous moderators: Mean (SD), Min–Max; Categorical moderators: n (%)"
+  ) %>%
+  cols_label(
+    Variable = md("**Moderator**"),
+    Type     = md("**Type**"),
+    Summary  = md("**Summary**")
+  ) %>%
+  cols_align(
+    align = "left",
+    columns = c(Variable, Summary)
+  ) %>%
+  cols_align(
+    align = "center",
+    columns = Type
+  ) %>%
+  tab_options(
+    table.font.size = 14,
+    data_row.padding = px(4),
+    table.width = pct(100),
+    column_labels.background.color = "#f0f0f0",
+    column_labels.font.weight = "bold",
+    table.font.names = "Times New Roman"
+  ) %>%
+  opt_table_lines()   # nice simple borders
+
+gt_summary
+```
+# Moderator Analyses
+
+Here we fit binomial GLMMs (random intercept for `Study`) separately for the continuous and categorical moderators. For continuous moderators, we report the estimated prevalence at the reference (moderator = 0) and the marginal delta (approximate change in percentage points per 1‑unit increase). For categorical moderators, we report the estimated prevalence for the reference level and contrasted level(s).
+
+## Moderators setup
+```{r mods-setup-functions}
+# distinguish between continuous and categorical variables
+cont_vars <- c(
+  "Percentage_women",
+  "Mean_age",
+  "Percentage_minority",
+  "Percentage_partner",
+  "High_education",
+  "TP_assessments",
+  "N_trajectories",
+  "Trauma_TP1",
+  "TP1_TPX",
+  "Trauma_TPX",
+  "Entropy",
+  "Grolts",
+  "Sample_Size_100" # unit = 100 participants
+)
+
+cat_vars <- list(
+  list(var="Diagnostic_DSM",     keep=c("4","5"),                 ref="4"),
+  list(var="Occupational_trauma",keep=c("No","Yes"),              ref="No"),
+  list(var="Developmental_age",  keep=c("Adult","Youth"),         ref="Adult"),
+  list(var="Location",           keep=NULL,                       ref=NULL),
+  list(var="Location_US",        keep=NULL,                       ref="Non-US"),
+  list(var="Trajectory_analysis",keep=NULL,                       ref=NULL),
+  list(var="Scale_moderator",    keep=c("Interview","Self"),      ref="Interview"),
+  list(var="Trauma_exposure",    keep=c("Inter","Non"),           ref="Inter"),
+  list(var="Trauma_type",        keep=c("Combat","Natural","Injury"), ref="Combat"),
+  list(var="Military",           keep=NULL,                       ref="No"),
+  list(var="Discrete",           keep=c("No","Yes"),              ref="No"),
+  list(var="Health_First",       keep=c("Yes","No"),              ref="Yes")
+)
+
+# Consistent optimizer for all fits
+ctrl <- glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
+
+# Utility to add Success/Failure columns for a given trajectory
+add_binom_cols <- function(data, success_col = "Low_n", denom_col = "Sample_Size") {
+  stopifnot(success_col %in% names(data), denom_col %in% names(data))
+  data %>%
+    mutate(
+      Success = .data[[success_col]],
+      Failure = .data[[denom_col]] - Success
+    )
 }
 
-# get the p-value column name
-.pcol <- function(coef_mat) {
-  hits <- intersect(colnames(coef_mat), c("Pr(>|z|)", "Pr(>|t|)", "Pr(>|Chisq|)"))
-  if (length(hits)) hits[1] else NA_character_
+#fit model for one predictor and return the key stats
+fit_cont <- function(data, var, success_col = "Low_n", denom_col = "Sample_Size") {
+  d <- data %>%
+    filter(!is.na(.data[[var]])) %>%
+    add_binom_cols(success_col = success_col, denom_col = denom_col)
+
+  fml <- as.formula(paste0("cbind(Success, Failure) ~ ", var, " + (1 | Study)"))
+  m <- glmer(fml, data = d, family = binomial, control = ctrl)
+
+  coefs <- summary(m)$coefficients
+  b0 <- unname(fixef(m)["(Intercept)"])
+  b1 <- unname(fixef(m)[var])
+  p0 <- plogis(b0)
+
+  p_col <- intersect(colnames(coefs), c("Pr(>|z|)", "Pr(>|t|)", "Pr(>|Chisq|)"))
+  pval  <- if (length(p_col)) unname(coefs[var, p_col[1]]) else NA_real_
+
+  tibble(
+    trajectory = sub("_n$", "", success_col),
+    predictor  = var,
+    Samples    = nobs(m),
+    prevalence_at_0_pct        = 100 * p0,
+    slope                      = b1,
+    marginal_delta_pp_per_unit = b1 * p0 * (1 - p0) * 100,
+    p_value                    = pval
+  )
 }
 
-# Find keep/ref settings for a categorical variable from cat_vars list
-get_cat_specs <- function(var) {
-  specs <- Filter(function(x) x$var == var, cat_vars)
-  if (length(specs) == 1) return(specs[[1]]) else return(NULL)
-}
-
-# Fit a categorical moderator (using get_cat_specs)
-fit_cat <- function(data, var, success_col = "Low_n", denom_col = "Sample_Size") {
-  specs <- get_cat_specs(var)
-  if (is.null(specs)) return(tibble::tibble())
+# Fit one categorical moderator and return prevalence by level + Δ vs ref (pp) + p-values
+fit_cat <- function(data, var, keep = NULL, ref = NULL,
+                    success_col = "Low_n", denom_col = "Sample_Size") {
+  stopifnot(var %in% names(data))
 
   d <- data %>%
-    dplyr::filter(!is.na(.data[[var]])) %>%
-    { if (!is.null(specs$keep)) dplyr::filter(., .data[[var]] %in% specs$keep) else . } %>%
-    add_binom_cols(success_col, denom_col) %>%
-    dplyr::mutate(
-      !!rlang::sym(var) := forcats::as_factor(.data[[var]]),
-      !!rlang::sym(var) := if (!is.null(specs$ref) && specs$ref %in% levels(.data[[var]])) {
-        forcats::fct_relevel(.data[[var]], specs$ref)
-      } else {
-        forcats::fct_drop(.data[[var]])
-      }
-    )
+    filter(!is.na(.data[[var]])) %>%
+    { if (!is.null(keep)) filter(., .data[[var]] %in% keep) else . } %>%
+    mutate(
+      !!var := factor(.data[[var]]),
+      !!var := if (!is.null(ref) && ref %in% levels(.data[[var]]))
+                 fct_relevel(.data[[var]], ref)
+               else fct_drop(.data[[var]])
+    ) %>%
+    add_binom_cols(success_col = success_col, denom_col = denom_col)
 
-  if (nlevels(d[[var]]) < 2) return(tibble::tibble())
+  if (nlevels(d[[var]]) < 2) return(tibble())  # nothing to compare
 
-  fml <- stats::as.formula(paste0("cbind(Success, Failure) ~ ", var, " + (1 | Study)"))
-  m <- lme4::glmer(fml, data = d, family = binomial, control = .ctrl)
+  fml <- as.formula(paste0("cbind(Success, Failure) ~ ", var, " + (1 | Study)"))
+  m <- glmer(fml, data = d, family = binomial, control = ctrl)
 
-  fe <- lme4::fixef(m)
+  fe <- fixef(m)
   b0 <- unname(fe["(Intercept)"])
   lvls <- levels(d[[var]])
 
-  add <- sapply(lvls, function(L) { nm <- paste0(var, L); if (nm %in% names(fe)) fe[[nm]] else 0 })
+  # baseline = first level
+  add <- sapply(lvls, function(L) {
+    nm <- paste0(var, L)                 # e.g., "Trauma_typeNatural"
+    if (nm %in% names(fe)) fe[[nm]] else 0
+  })
 
   s <- summary(m)$coefficients
-  pcol <- .pcol(s)
+  pcol <- intersect(colnames(s), c("Pr(>|z|)", "Pr(>|t|)", "Pr(>|Chisq|)"))
   pvals <- sapply(lvls, function(L) {
     nm <- paste0(var, L)
-    if (!is.na(pcol) && nm %in% rownames(s)) unname(s[nm, pcol]) else NA_real_
+    if (nm %in% rownames(s)) unname(s[nm, pcol[1]]) else NA_real_  # ref has NA
   })
 
   p <- plogis(b0 + add)
   p_ref <- p[1]
 
-  tibble::tibble(
+  tibble(
     trajectory      = sub("_n$", "", success_col),
     moderator       = var,
-    n               = stats::nobs(m),
+    n               = nobs(m),               # Samples (k)
     ref_level       = lvls[1],
     level           = lvls,
     prevalence_pct  = 100 * p,
@@ -159,69 +473,918 @@ fit_cat <- function(data, var, success_col = "Low_n", denom_col = "Sample_Size")
     p_value         = pvals
   )
 }
+```
 
-# Run a set of variables on a trajectory dataset
-run_group <- function(df_traj, vars, success_col = "Low_n", denom_col = "Sample_Size") {
-  is_cat <- vapply(vars, is_categorical, logical(1))
-  cont_vars_group <- vars[!is_cat]
-  cat_vars_group  <- vars[is_cat]
+## Tables Setup
 
-  res_cont <- if (length(cont_vars_group)) purrr::map_dfr(cont_vars_group, ~fit_cont(df_traj, .x, success_col, denom_col)) else tibble::tibble()
-  res_cat  <- if (length(cat_vars_group))  purrr::map_dfr(cat_vars_group, ~fit_cat (df_traj, .x, success_col, denom_col)) else tibble::tibble()
+```{r mods-setup-tables}
+# helpers for p formatting
+fmt_p <- function(p) ifelse(is.na(p), "", ifelse(p < .001, "< .001", sprintf("%.3f", p)))
+sig   <- function(p) dplyr::case_when(is.na(p) ~ "", p < .001 ~ "***", p < .01 ~ "**", p < .05 ~ "*", TRUE ~ "")
 
-  list(cont = res_cont, cat = res_cat)
-}
-
-
-# Unified table column definitions
-UNIFIED_COLS <- c(
-  "Predictor", "k_shared",
-  "Ref_Prevalence_Cont", "Delta_Marginal_Cont", "p_value_shared",
-  "Ref_Name_Cat", "Ref_Prevalence_Cat", "Comp_Name_Cat", "Comp_Prevalence_Cat", "Delta_Marginal_Cat"
+# Moderator labels for tables
+mod_labels <- c(
+  Percentage_women    = "Percentage of women",
+  Mean_age            = "Mean age",
+  Percentage_minority = "Minorities (%)",
+  Percentage_partner  = "Having a partner (%)",
+  High_education      = "Education (%)",
+  TP_assessments      = "Time point PTSD assessments",
+  N_trajectories      = "Number of trajectories",
+  Trauma_TP1          = "Time between trauma and first assessment (months)",
+  TP1_TPX             = "Time span of the study (months)",
+  Trauma_TPX          = "Time between trauma and last assessment (months)",
+  Entropy             = "Entropy",
+  Grolts              = "Quality score",
+  Sample_Size_100     = "Sample size / 100",
+  Diagnostic_DSM      = "Diagnostic Criteria",
+  Occupational_trauma = "Occupational trauma",
+  Developmental_age   = "Developmental age",
+  Location            = "Country income",
+  Location_US         = "US vs Non-US",
+  Trajectory_analysis = "LGMM vs LCGA",
+  Scale_moderator     = "PTSD symptom assessment",
+  Trauma_exposure     = "Trauma exposure",
+  Trauma_type         = "Trauma nature",
+  Military            = "Civilian vs Military",
+  Discrete            = "Discrete vs non-discrete trauma",
+  Health_First        = "HP/First responders vs other"
 )
 
-.empty_unified_tbl <- function() {
+# continuous variable labels for tables
+mod_levels <- unname(mod_labels)
+delta_col  <- "Marginal Δ"  # use literal Δ; save file as UTF-8
+
+# categorical moderator level labels for tables
+level_labels <- list(
+  Diagnostic_DSM      = c(`4` = "DSM-IV", `5` = "DSM-5"),
+  Occupational_trauma = c(No = "No", Yes = "Yes"),
+  Developmental_age   = c(Adult = "Adult", Youth = "Youth"),
+  Location            = c(
+    "High income countries" = "High income countries",
+    "High-income countries" = "High income countries",
+    "High"                  = "High income countries",
+    "HIC"                   = "High income countries",
+    "Mid-, low- income"     = "Mid-, low- income",
+    "Mid/low income"        = "Mid-, low- income",
+    "LMIC"                  = "Mid-, low- income"
+  ),
+  Location_US         = c(`Non-US` = "Non-US", US = "US"),
+
+  Trajectory_analysis = c(LCGA = "LCGA", LGMM = "LGMM"),
+  Scale_moderator     = c(Interview = "Interview", Self = "Self-reported scale"),
+  Trauma_exposure     = c(Inter = "Interpersonal trauma", Non = "Non-interpersonal trauma"),
+  Trauma_type         = c(Combat = "Combat", Injury = "Injury", Natural = "Natural disaster"),
+  Military            = c(No = "Civilian", Yes = "Military"),
+  Discrete            = c(No = "Non-discrete", Yes = "Discrete"),
+  Health_First        = c(Yes = "HP/First responder", No = "Other")
+)
+
+# Build a lookup tibble we can join onto both ref and comparison
+lvl_map <- purrr::imap_dfr(level_labels, ~tibble::tibble(
+  moderator = .y,
+  orig      = names(.x),
+  pretty    = unname(.x)
+))
+```
+
+## 🚀 Low Symptom Trajectory
+
+```{r low-moderators-setup}
+
+df_Low <- df_moderation %>%
+  filter(!is.na(Low_percentage))
+
+# Calculate Low_n as (percentage / 100) * sample size
+df_Low$Low_n <-
+  round((df_Low$Low_percentage / 100) * df_Low$Sample_Size)
+```
+
+### Descriptives
+
+We provide additional descriptives based on the Low trajectory variable, using the full dataset.
+
+```{r Low-descriptives}
+
+# Total number of individuals classified as Low (ignoring missingness in other variables)
+total_Low_n <- sum(df_Low$Low_n, na.rm = TRUE)
+
+# Number of unique samples
+unique_samples <- length(unique(df_Low$Study))
+
+# Display as a table
+additional_info <- data.frame(
+  Description = c("Total number of individuals in Low trajectory", "Number of unique samples"),
+  Value = format(c(total_Low_n, unique_samples), big.mark = ",")
+)
+
+knitr::kable(additional_info, caption = "Additional Descriptives for Low Trajectory Analysis")
+```
+
+### Continuous moderators
+
+```{r Low-mods-cont}
+fit_cont_Low <- \(data, var) fit_cont(data, var, success_col = "Low_n", denom_col = "Sample_Size")
+
+fits_cont_Low <- map_dfr(cont_vars, ~fit_cont_Low(df_Low, .x)) %>%
+  mutate(across(where(is.numeric), ~round(.x, 3)))
+
+# table rendering
+tbl <- fits_cont_Low %>%
+  mutate(
+    Predictor = dplyr::recode(predictor, !!!mod_labels, .default = predictor),
+    Predictor = factor(Predictor, levels = mod_levels),
+    `Prevalence (0%)` = sprintf("%.1f%%", prevalence_at_0_pct),
+    !!delta_col := marginal_delta_pp_per_unit,
+    `P-value` = paste0(fmt_p(p_value), ifelse(is.na(p_value), "", paste0(" ", sig(p_value)))),
+    Slope = slope
+  ) %>%
+  select(Predictor, Samples, `Prevalence (0%)`, Slope, dplyr::all_of(delta_col),`P-value`) %>%
+  arrange(Predictor)
+
+# ensure the table and its column names are UTF-8
+tbl_utf8 <- tbl
+names(tbl_utf8) <- enc2utf8(names(tbl_utf8))
+tbl_utf8 <- dplyr::mutate(tbl_utf8, dplyr::across(where(is.character), enc2utf8))
+
+tbl_utf8 %>%
+  gt() %>%
+  cols_width(Predictor ~ px(220)) %>%
+  cols_align(align = "center", columns = -Predictor) %>%
+  cols_align(align = "left",   columns = Predictor) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels(columns = everything())
+  ) %>%
+  tab_options(table.width = pct(100))
+```
+
+### Categorical moderators
+
+```{r Low-mods-cat}
+fit_cat_Low <- \(data, var, keep=NULL, ref=NULL)
+  fit_cat(data, var, keep, ref, success_col = "Low_n", denom_col = "Sample_Size")
+
+fits_cat_Low <- purrr::map_dfr(
+  cat_vars, \(spec) do.call(fit_cat_Low, c(list(data = df_Low), spec))
+)
+
+# table
+## set reference level
+ref_prev_low <- fits_cat_Low %>%
+  dplyr::filter(level == ref_level) %>%
+  dplyr::select(moderator, ref_level, ref_prev = prevalence_pct)
+
+# setup table
+Low_cat_table <- fits_cat_Low %>%
+  # drop ref–ref rows
+  dplyr::filter(level != ref_level) %>%
+  # join the correct ref prevalence for LOW
+  dplyr::left_join(ref_prev_low, by = c("moderator", "ref_level")) %>%
+  # pretty names for ref and comparison
+  dplyr::left_join(lvl_map, by = c("moderator", "ref_level" = "orig")) %>%
+  dplyr::rename(pretty_ref = pretty) %>%
+  dplyr::left_join(lvl_map, by = c("moderator", "level" = "orig")) %>%
+  dplyr::rename(pretty_cmp = pretty) %>%
+  dplyr::mutate(
+    Predictor                 = dplyr::recode(moderator, !!!mod_labels, .default = moderator),
+    `Samples (k)`             = n,
+    `Reference (Name)`        = dplyr::coalesce(pretty_ref, ref_level),
+    `Reference (Prevalence)`  = sprintf("%.1f%%", ref_prev),
+    `Comparison (Name)`       = dplyr::coalesce(pretty_cmp, level),
+    `Comparison (Prevalence)` = sprintf("%.1f%%", prevalence_pct),
+    !!delta_col               := round(diff_vs_ref_pp, 2),  # <-- key change
+    `p-value`                 = paste0(fmt_p(p_value), ifelse(is.na(p_value), "", paste0(" ", sig(p_value))))
+  ) %>%
+  dplyr::select(
+    Predictor, `Samples (k)`, `Reference (Name)`, `Reference (Prevalence)`,
+    `Comparison (Name)`, `Comparison (Prevalence)`, dplyr::all_of(delta_col), `p-value`
+  ) %>%
+  dplyr::arrange(Predictor, `Comparison (Name)`)
+
+# Render
+Low_cat_table %>%
+  gt() %>%
+  cols_width(Predictor ~ px(110)) %>%
+  cols_align(align = "left",   columns = Predictor) %>%
+  cols_align(align = "center", columns = -Predictor) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = list(
+      cells_column_labels(columns = everything())
+    )
+  ) %>%
+  tab_options(
+    data_row.padding = px(4),
+    column_labels.padding = px(6),
+    table.font.size = px(13)
+  )
+```
+
+## 🌿 Decreasing Symptom Trajectory
+
+```{r Decreasing-moderators-setup}
+df_Decreasing <- df_moderation %>%
+  filter(!is.na(Decreasing_percentage))
+
+# Calculate Decreasing_n as (percentage / 100) * sample size
+df_Decreasing$Decreasing_n <-
+  round((df_Decreasing$Decreasing_percentage / 100) * df_Decreasing$Sample_Size)
+```
+
+### Descriptives
+
+We provide additional descriptives based on the Decreasing trajectory variable, using the full dataset.
+
+```{r Decreasing-descriptives}
+# Total number of individuals classified as Decreasing (ignoring missingness in other variables)
+total_Decreasing_n <- sum(df_Decreasing$Decreasing_n, na.rm = TRUE)
+
+# Number of unique samples
+unique_samples <- length(unique(df_Decreasing$Study))
+
+# Display as a table
+additional_info <- data.frame(
+  Description = c("Total number of individuals in Decreasing trajectory", "Number of unique samples"),
+  Value = format(c(total_Decreasing_n, unique_samples), big.mark = ",")
+)
+
+knitr::kable(additional_info, caption = "Additional Descriptives for Decreasing Trajectory Analysis")
+```
+
+### Continuous moderators
+
+```{r Decreasing-mods-cont}
+fit_cont_Decreasing <- \(data, var) fit_cont(data, var, success_col = "Decreasing_n", denom_col = "Sample_Size")
+
+fits_cont_Decreasing <- map_dfr(cont_vars, ~fit_cont_Decreasing(df_Decreasing, .x)) %>%
+  mutate(across(where(is.numeric), ~round(.x, 3)))
+
+# table 
+# build table
+tbl <- fits_cont_Decreasing %>%
+  mutate(
+    Predictor = dplyr::recode(predictor, !!!mod_labels, .default = predictor),
+    Predictor = factor(Predictor, levels = mod_levels),
+    `Prevalence (0%)` = sprintf("%.1f%%", prevalence_at_0_pct),
+    !!delta_col := marginal_delta_pp_per_unit,
+    `P-value` = paste0(fmt_p(p_value), ifelse(is.na(p_value), "", paste0(" ", sig(p_value)))),
+    Slope = slope
+  ) %>%
+  select(Predictor, Samples, `Prevalence (0%)`, Slope, dplyr::all_of(delta_col),`P-value`) %>%
+  arrange(Predictor)
+
+# ensure the table and its column names are UTF-8
+tbl_utf8 <- tbl
+names(tbl_utf8) <- enc2utf8(names(tbl_utf8))
+tbl_utf8 <- dplyr::mutate(tbl_utf8, dplyr::across(where(is.character), enc2utf8))
+
+# render
+tbl_utf8 %>%
+  gt() %>%
+  cols_width(Predictor ~ px(220)) %>%
+  cols_align(align = "center", columns = -Predictor) %>%
+  cols_align(align = "left",   columns = Predictor) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels(columns = everything())
+  ) %>%
+  tab_options(table.width = pct(100))
+```
+
+### Categorical moderators
+
+```{r Decreasing-mods-cat}
+fit_cat_Decreasing <- \(data, var, keep=NULL, ref=NULL)
+  fit_cat(data, var, keep, ref, success_col = "Decreasing_n", denom_col = "Sample_Size")
+
+fits_cat_Decreasing <- purrr::map_dfr(
+  cat_vars, \(spec) do.call(fit_cat_Decreasing, c(list(data = df_Decreasing), spec))
+)
+
+# table
+## build table 
+ref_prev_Decreasing <- fits_cat_Decreasing %>%
+  dplyr::filter(level == ref_level) %>%
+  dplyr::select(moderator, ref_level, ref_prev = prevalence_pct)
+
+Decreasing_cat_table <- fits_cat_Decreasing %>%
+  # drop ref–ref rows
+  dplyr::filter(level != ref_level) %>%
+  # join the correct ref prevalence for Decreasing
+  dplyr::left_join(ref_prev_Decreasing, by = c("moderator", "ref_level")) %>%
+  # pretty names for ref and comparison
+  dplyr::left_join(lvl_map, by = c("moderator", "ref_level" = "orig")) %>%
+  dplyr::rename(pretty_ref = pretty) %>%
+  dplyr::left_join(lvl_map, by = c("moderator", "level" = "orig")) %>%
+  dplyr::rename(pretty_cmp = pretty) %>%
+  dplyr::mutate(
+    Predictor                 = dplyr::recode(moderator, !!!mod_labels, .default = moderator),
+    `Samples (k)`             = n,
+    `Reference (Name)`        = dplyr::coalesce(pretty_ref, ref_level),
+    `Reference (Prevalence)`  = sprintf("%.1f%%", ref_prev),
+    `Comparison (Name)`       = dplyr::coalesce(pretty_cmp, level),
+    `Comparison (Prevalence)` = sprintf("%.1f%%", prevalence_pct),
+    !!delta_col               := round(diff_vs_ref_pp, 2),  # <-- key change
+    `p-value`                 = paste0(fmt_p(p_value), ifelse(is.na(p_value), "", paste0(" ", sig(p_value))))
+  ) %>%
+  dplyr::select(
+    Predictor, `Samples (k)`, `Reference (Name)`, `Reference (Prevalence)`,
+    `Comparison (Name)`, `Comparison (Prevalence)`, dplyr::all_of(delta_col), `p-value`
+  ) %>%
+  dplyr::arrange(Predictor, `Comparison (Name)`)
+
+## Render
+Decreasing_cat_table %>%
+  gt() %>%
+  cols_width(Predictor ~ px(110)) %>%
+  cols_align(align = "left",   columns = Predictor) %>%
+  cols_align(align = "center", columns = -Predictor) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = list(
+      cells_column_labels(columns = everything())
+    )
+  ) %>%
+  tab_options(
+    data_row.padding = px(4),
+    column_labels.padding = px(6),
+    table.font.size = px(13)
+  )
+```
+
+## ⚠️ Increasing Symptom Trajectory
+
+```{r Increasing-moderators-setup}
+df_Increasing <- df_moderation %>%
+  filter(!is.na(Increasing_percentage))
+
+# Calculate Increasing_n as (percentage / 100) * sample size
+df_Increasing$Increasing_n <-
+  round((df_Increasing$Increasing_percentage / 100) * df_Increasing$Sample_Size)
+```
+
+### Descriptives
+
+We provide additional descriptives based on the Increasing trajectory variable, using the full dataset.
+
+```{r Increasing-descriptives}
+# Total number of individuals classified as Increasing (ignoring missingness in other variables)
+total_Increasing_n <- sum(df_Increasing$Increasing_n, na.rm = TRUE)
+
+# Number of unique samples
+unique_samples <- length(unique(df_Increasing$Study))
+
+# Display as a table
+additional_info <- data.frame(
+  Description = c("Total number of individuals in Increasing trajectory", "Number of unique samples"),
+  Value = format(c(total_Increasing_n, unique_samples), big.mark = ",")
+)
+
+knitr::kable(additional_info, caption = "Additional Descriptives for Increasing Trajectory Analysis")
+```
+
+### Continuous moderators
+
+```{r Increasing-mods-cont}
+fit_cont_Increasing <- \(data, var) fit_cont(data, var, success_col = "Increasing_n", denom_col = "Sample_Size")
+
+fits_cont_Increasing <- map_dfr(cont_vars, ~fit_cont_Increasing(df_Increasing, .x)) %>%
+  mutate(across(where(is.numeric), ~round(.x, 3)))
+
+# build table
+tbl <- fits_cont_Increasing %>%
+  mutate(
+    Predictor = dplyr::recode(predictor, !!!mod_labels, .default = predictor),
+    Predictor = factor(Predictor, levels = mod_levels),
+    `Prevalence (0%)` = sprintf("%.1f%%", prevalence_at_0_pct),
+    !!delta_col := marginal_delta_pp_per_unit,
+    `P-value` = paste0(fmt_p(p_value), ifelse(is.na(p_value), "", paste0(" ", sig(p_value)))),
+    Slope = slope
+  ) %>%
+  select(Predictor, Samples, `Prevalence (0%)`, Slope, dplyr::all_of(delta_col),`P-value`) %>%
+  arrange(Predictor)
+
+# ensure the table and its column names are UTF-8
+tbl_utf8 <- tbl
+names(tbl_utf8) <- enc2utf8(names(tbl_utf8))
+tbl_utf8 <- dplyr::mutate(tbl_utf8, dplyr::across(where(is.character), enc2utf8))
+
+tbl_utf8 %>%
+  gt() %>%
+  cols_width(Predictor ~ px(220)) %>%
+  cols_align(align = "center", columns = -Predictor) %>%
+  cols_align(align = "left",   columns = Predictor) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels(columns = everything())
+  ) %>%
+  tab_options(table.width = pct(100))
+```
+
+### Categorical moderators
+
+```{r Increasing-mods-cat}
+fit_cat_Increasing <- \(data, var, keep=NULL, ref=NULL)
+  fit_cat(data, var, keep, ref, success_col = "Increasing_n", denom_col = "Sample_Size")
+
+fits_cat_Increasing <- purrr::map_dfr(
+  cat_vars, \(spec) do.call(fit_cat_Increasing, c(list(data = df_Increasing), spec))
+)
+
+# build table
+ref_prev_Increasing <- fits_cat_Increasing %>%
+  dplyr::filter(level == ref_level) %>%
+  dplyr::select(moderator, ref_level, ref_prev = prevalence_pct)
+
+Increasing_cat_table <- fits_cat_Increasing %>%
+  # drop ref–ref rows
+  dplyr::filter(level != ref_level) %>%
+  # join the correct ref prevalence for Increasing
+  dplyr::left_join(ref_prev_Increasing, by = c("moderator", "ref_level")) %>%
+  # pretty names for ref and comparison
+  dplyr::left_join(lvl_map, by = c("moderator", "ref_level" = "orig")) %>%
+  dplyr::rename(pretty_ref = pretty) %>%
+  dplyr::left_join(lvl_map, by = c("moderator", "level" = "orig")) %>%
+  dplyr::rename(pretty_cmp = pretty) %>%
+  dplyr::mutate(
+    Predictor                 = dplyr::recode(moderator, !!!mod_labels, .default = moderator),
+    `Samples (k)`             = n,
+    `Reference (Name)`        = dplyr::coalesce(pretty_ref, ref_level),
+    `Reference (Prevalence)`  = sprintf("%.1f%%", ref_prev),
+    `Comparison (Name)`       = dplyr::coalesce(pretty_cmp, level),
+    `Comparison (Prevalence)` = sprintf("%.1f%%", prevalence_pct),
+    !!delta_col               := round(diff_vs_ref_pp, 2),  # <-- key change
+    `p-value`                 = paste0(fmt_p(p_value), ifelse(is.na(p_value), "", paste0(" ", sig(p_value))))
+  ) %>%
+  dplyr::select(
+    Predictor, `Samples (k)`, `Reference (Name)`, `Reference (Prevalence)`,
+    `Comparison (Name)`, `Comparison (Prevalence)`, dplyr::all_of(delta_col), `p-value`
+  ) %>%
+  dplyr::arrange(Predictor, `Comparison (Name)`)
+
+# render
+Increasing_cat_table %>%
+  gt() %>%
+  cols_width(Predictor ~ px(110)) %>%
+  cols_align(align = "left",   columns = Predictor) %>%
+  cols_align(align = "center", columns = -Predictor) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = list(
+      cells_column_labels(columns = everything())
+    )
+  ) %>%
+  tab_options(
+    data_row.padding = px(4),
+    column_labels.padding = px(6),
+    table.font.size = px(13)
+  )
+```
+
+## 🩸 High Symptom Trajectory
+
+```{r High-moderators-setup}
+df_High <- df_moderation
+
+df_High <- df_High %>%
+  filter(!is.na(High_percentage))
+
+# Calculate High_n as (percentage / 100) * sample size
+df_High$High_n <-
+  round((df_High$High_percentage / 100) * df_High$Sample_Size)
+```
+
+### Descriptives
+
+We provide additional descriptives based on the High trajectory variable, using the full dataset.
+
+```{r High-descriptives}
+
+# Total number of individuals classified as High (ignoring missingness in other variables)
+total_High_n <- sum(df_High$High_n, na.rm = TRUE)
+
+# Number of unique samples
+unique_samples <- length(unique(df_High$Study))
+
+# Display as a table
+additional_info <- data.frame(
+  Description = c("Total number of individuals in High trajectory", "Number of unique samples"),
+  Value = format(c(total_High_n, unique_samples), big.mark = ",")
+)
+
+knitr::kable(additional_info, caption = "Additional Descriptives for High Trajectory Analysis")
+```
+
+### Continuous moderators
+
+```{r High-mods-cont}
+fit_cont_High <- \(data, var) fit_cont(data, var, success_col = "High_n", denom_col = "Sample_Size")
+
+fits_cont_High <- map_dfr(cont_vars, ~fit_cont_High(df_High, .x)) %>%
+  mutate(across(where(is.numeric), ~round(.x, 3)))
+
+# build table
+tbl <- fits_cont_High %>%
+  mutate(
+    Predictor = dplyr::recode(predictor, !!!mod_labels, .default = predictor),
+    Predictor = factor(Predictor, levels = mod_levels),
+    `Prevalence (0%)` = sprintf("%.1f%%", prevalence_at_0_pct),
+    !!delta_col := marginal_delta_pp_per_unit,
+    `P-value` = paste0(fmt_p(p_value), ifelse(is.na(p_value), "", paste0(" ", sig(p_value)))),
+    Slope = slope
+  ) %>%
+  select(Predictor, Samples, `Prevalence (0%)`, Slope, dplyr::all_of(delta_col),`P-value`) %>%
+  arrange(Predictor)
+
+# ensure the table and its column names are UTF-8
+tbl_utf8 <- tbl
+names(tbl_utf8) <- enc2utf8(names(tbl_utf8))
+tbl_utf8 <- dplyr::mutate(tbl_utf8, dplyr::across(where(is.character), enc2utf8))
+
+# render
+tbl_utf8 %>%
+  gt() %>%
+  cols_width(Predictor ~ px(220)) %>%
+  cols_align(align = "center", columns = -Predictor) %>%
+  cols_align(align = "left",   columns = Predictor) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels(columns = everything())
+  ) %>%
+  tab_options(table.width = pct(100))
+```
+
+### Categorical moderators
+
+```{r High-mods-cat}
+fit_cat_High <- \(data, var, keep=NULL, ref=NULL)
+  fit_cat(data, var, keep, ref, success_col = "High_n", denom_col = "Sample_Size")
+
+fits_cat_High <- purrr::map_dfr(
+  cat_vars, \(spec) do.call(fit_cat_High, c(list(data = df_High), spec))
+)
+
+# build table
+ref_prev_High <- fits_cat_High %>%
+  dplyr::filter(level == ref_level) %>%
+  dplyr::select(moderator, ref_level, ref_prev = prevalence_pct)
+
+High_cat_table <- fits_cat_High %>%
+  # drop ref–ref rows
+  dplyr::filter(level != ref_level) %>%
+  # join the correct ref prevalence for High
+  dplyr::left_join(ref_prev_High, by = c("moderator", "ref_level")) %>%
+  # pretty names for ref and comparison
+  dplyr::left_join(lvl_map, by = c("moderator", "ref_level" = "orig")) %>%
+  dplyr::rename(pretty_ref = pretty) %>%
+  dplyr::left_join(lvl_map, by = c("moderator", "level" = "orig")) %>%
+  dplyr::rename(pretty_cmp = pretty) %>%
+  dplyr::mutate(
+    Predictor                 = dplyr::recode(moderator, !!!mod_labels, .default = moderator),
+    `Samples (k)`             = n,
+    `Reference (Name)`        = dplyr::coalesce(pretty_ref, ref_level),
+    `Reference (Prevalence)`  = sprintf("%.1f%%", ref_prev),
+    `Comparison (Name)`       = dplyr::coalesce(pretty_cmp, level),
+    `Comparison (Prevalence)` = sprintf("%.1f%%", prevalence_pct),
+    !!delta_col               := round(diff_vs_ref_pp, 2),  # <-- key change
+    `p-value`                 = paste0(fmt_p(p_value), ifelse(is.na(p_value), "", paste0(" ", sig(p_value))))
+  ) %>%
+  dplyr::select(
+    Predictor, `Samples (k)`, `Reference (Name)`, `Reference (Prevalence)`,
+    `Comparison (Name)`, `Comparison (Prevalence)`, dplyr::all_of(delta_col), `p-value`
+  ) %>%
+  dplyr::arrange(Predictor, `Comparison (Name)`)
+
+# render
+High_cat_table %>%
+  gt() %>%
+  cols_width(Predictor ~ px(110)) %>%
+  cols_align(align = "left",   columns = Predictor) %>%
+  cols_align(align = "center", columns = -Predictor) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = list(
+      cells_column_labels(columns = everything())
+    )
+  ) %>%
+  tab_options(
+    data_row.padding = px(4),
+    column_labels.padding = px(6),
+    table.font.size = px(13)
+  )
+```
+
+## 🌗 Moderate Symptom Trajectory
+
+```{r Moderate-moderators-setup}
+df_Moderate <- df_moderation
+
+df_Moderate <- df_Moderate %>%
+  filter(!is.na(Moderate_percentage))
+
+# Calculate Moderate_n as (percentage / 100) * sample size
+df_Moderate$Moderate_n <-
+  round((df_Moderate$Moderate_percentage / 100) * df_Moderate$Sample_Size)
+```
+
+### Descriptives
+
+We provide additional descriptives based on the Moderate trajectory variable, using the full dataset.
+
+```{r Moderate-descriptives}
+# Total number of individuals classified as Moderate (ignoring missingness in other variables)
+total_Moderate_n <- sum(df_Moderate$Moderate_n, na.rm = TRUE)
+
+# Number of unique samples
+unique_samples <- length(unique(df_Moderate$Study))
+
+# Display as a table
+additional_info <- data.frame(
+  Description = c("Total number of individuals in Moderate trajectory", "Number of unique samples"),
+  Value = format(c(total_Moderate_n, unique_samples), big.mark = ",")
+)
+
+knitr::kable(additional_info, caption = "Additional Descriptives for Moderate Trajectory Analysis")
+```
+
+### Continuous moderators
+
+```{r Moderate-mods-cont}
+fit_cont_Moderate <- \(data, var) fit_cont(data, var, success_col = "Moderate_n", denom_col = "Sample_Size")
+
+fits_cont_Moderate <- map_dfr(cont_vars, ~fit_cont_Moderate(df_Moderate, .x)) %>%
+  mutate(across(where(is.numeric), ~round(.x, 3)))
+
+# build table
+tbl <- fits_cont_Moderate %>%
+  mutate(
+    Predictor = dplyr::recode(predictor, !!!mod_labels, .default = predictor),
+    Predictor = factor(Predictor, levels = mod_levels),
+    `Prevalence (0%)` = sprintf("%.1f%%", prevalence_at_0_pct),
+    !!delta_col := marginal_delta_pp_per_unit,
+    `P-value` = paste0(fmt_p(p_value), ifelse(is.na(p_value), "", paste0(" ", sig(p_value)))),
+    Slope = slope
+  ) %>%
+  select(Predictor, Samples, `Prevalence (0%)`, Slope, dplyr::all_of(delta_col),`P-value`) %>%
+  arrange(Predictor)
+
+# ensure the table and its column names are UTF-8
+tbl_utf8 <- tbl
+names(tbl_utf8) <- enc2utf8(names(tbl_utf8))
+tbl_utf8 <- dplyr::mutate(tbl_utf8, dplyr::across(where(is.character), enc2utf8))
+
+tbl_utf8 %>%
+  gt() %>%
+  cols_width(Predictor ~ px(220)) %>%
+  cols_align(align = "center", columns = -Predictor) %>%
+  cols_align(align = "left",   columns = Predictor) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_column_labels(columns = everything())
+  ) %>%
+  tab_options(table.width = pct(100))
+```
+
+### Categorical moderators
+
+```{r Moderate-mods-cat}
+fit_cat_Moderate <- \(data, var, keep=NULL, ref=NULL)
+  fit_cat(data, var, keep, ref, success_col = "Moderate_n", denom_col = "Sample_Size")
+
+fits_cat_Moderate <- purrr::map_dfr(
+  cat_vars, \(spec) do.call(fit_cat_Moderate, c(list(data = df_Moderate), spec))
+)
+
+# build table
+ref_prev_Moderate <- fits_cat_Moderate %>%
+  dplyr::filter(level == ref_level) %>%
+  dplyr::select(moderator, ref_level, ref_prev = prevalence_pct)
+
+Moderate_cat_table <- fits_cat_Moderate %>%
+  # drop ref–ref rows
+  dplyr::filter(level != ref_level) %>%
+  # join the correct ref prevalence for Moderate
+  dplyr::left_join(ref_prev_Moderate, by = c("moderator", "ref_level")) %>%
+  # pretty names for ref and comparison
+  dplyr::left_join(lvl_map, by = c("moderator", "ref_level" = "orig")) %>%
+  dplyr::rename(pretty_ref = pretty) %>%
+  dplyr::left_join(lvl_map, by = c("moderator", "level" = "orig")) %>%
+  dplyr::rename(pretty_cmp = pretty) %>%
+  dplyr::mutate(
+    Predictor                 = dplyr::recode(moderator, !!!mod_labels, .default = moderator),
+    `Samples (k)`             = n,
+    `Reference (Name)`        = dplyr::coalesce(pretty_ref, ref_level),
+    `Reference (Prevalence)`  = sprintf("%.1f%%", ref_prev),
+    `Comparison (Name)`       = dplyr::coalesce(pretty_cmp, level),
+    `Comparison (Prevalence)` = sprintf("%.1f%%", prevalence_pct),
+    !!delta_col               := round(diff_vs_ref_pp, 2),  # <-- key change
+    `p-value`                 = paste0(fmt_p(p_value), ifelse(is.na(p_value), "", paste0(" ", sig(p_value))))
+  ) %>%
+  dplyr::select(
+    Predictor, `Samples (k)`, `Reference (Name)`, `Reference (Prevalence)`,
+    `Comparison (Name)`, `Comparison (Prevalence)`, dplyr::all_of(delta_col), `p-value`
+  ) %>%
+  dplyr::arrange(Predictor, `Comparison (Name)`)
+
+# render
+Moderate_cat_table %>%
+  gt() %>%
+  cols_width(Predictor ~ px(110)) %>%
+  cols_align(align = "left",   columns = Predictor) %>%
+  cols_align(align = "center", columns = -Predictor) %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = list(
+      cells_column_labels(columns = everything())
+    )
+  ) %>%
+  tab_options(
+    data_row.padding = px(4),
+    column_labels.padding = px(6),
+    table.font.size = px(13)
+  )
+```
+
+# Model 1: Univariate GLMMs 
+
+The first modelling stage investigates each moderator separately using a generalized linear mixed model with a binomial likelihood and a random intercept for study. 
+This univariate approach provides an initial screening of simple associations between each moderator and the prevalence of a given trajectory. 
+
+For continuous moderators, the model describes how the expected trajectory prevalence changes with a one-unit increase in the predictor. For categorical moderators, it compares the prevalence between the reference category and each alternative category. These univariate models offer clear descriptive insights before moving to the more complex multivariate analyses.
+
+For each trajectory (Low, Decreasing, Increasing, High, and Moderate) we repeat the univariate analyses, accompanied by descriptive summaries and correlation matrices of the continuous predictors for that trajectory. This allows us to examine how predictors relate to each specific symptom course and whether certain patterns are consistent across trajectories.
+
+```{r mods-setup-fitting}
+# Consistent Optimizer
+ctrl <- lme4::glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
+
+# add Success/Failure columns
+add_binom_cols <- function(data, success_col, denom_col) {
+  data %>%
+    dplyr::mutate(
+      Success = .data[[success_col]],
+      Failure = .data[[denom_col]] - Success
+    )
+}
+
+# extract a p-value from a model summary
+get_pval <- function(coefs, var) {
+  p_cols <- intersect(colnames(coefs), c("Pr(>|z|)", "Pr(>|t|)", "Pr(>|Chisq|)"))
+  if (length(p_cols) && var %in% rownames(coefs)) {
+    return(unname(coefs[var, p_cols[1]]))
+  }
+  return(NA_real_)
+}
+
+# Fit continuous model
+fit_cont <- function(data, var, success_col, denom_col) {
+  d <- data %>%
+    dplyr::filter(!is.na(.data[[var]])) %>%
+    add_binom_cols(success_col, denom_col)
+
+  m <- lme4::glmer(
+    stats::as.formula(paste0("cbind(Success, Failure) ~ ", var, " + (1|Study)")),
+    data = d,
+    family = binomial,
+    control = ctrl   # uses global ctrl
+  )
+
+  fe <- lme4::fixef(m)
+  b0 <- fe["(Intercept)"]
+  b1 <- fe[var]
+  p0 <- plogis(b0)
+  s  <- summary(m)$coefficients
+
   tibble::tibble(
-    Predictor          = character(),
-    k_shared           = integer(),
-    Ref_Prevalence_Cont  = character(),
-    Delta_Marginal_Cont  = character(),
-    p_value_shared     = character(),
-    Ref_Name_Cat       = character(),
-    Ref_Prevalence_Cat   = character(),
-    Comp_Name_Cat      = character(),
-    Comp_Prevalence_Cat  = character(),
-    Delta_Marginal_Cat   = character()
+    predictor = var,
+    Samples   = stats::nobs(m),
+    prevalence_at_0_pct = 100 * p0,
+    slope = b1,
+    marginal_delta_pp_per_unit = b1 * p0 * (1 - p0) * 100,
+    p_value = get_pval(s, var),
+    type="cont"
   )
 }
 
+
+# Fit categorical model
+fit_cat <- function(data, var, success_col, denom_col) {
+  spec <- CAT_SPECS[[var]]
+  if (is.null(spec)) return(tibble::tibble())
+
+  d <- data %>%
+    dplyr::filter(!is.na(.data[[var]])) %>%
+    { if (!is.null(spec$keep)) dplyr::filter(., .data[[var]] %in% spec$keep) else . } %>%
+    add_binom_cols(success_col, denom_col) %>%
+    dplyr::mutate(
+      !!var := forcats::fct_drop(forcats::as_factor(.data[[var]])),
+      !!var := if (!is.null(spec$ref) && spec$ref %in% levels(.data[[var]]))
+                 forcats::fct_relevel(.data[[var]], spec$ref)
+               else .data[[var]]
+    )
+
+  if (nlevels(d[[var]]) < 2) return(tibble::tibble())
+
+  m <- lme4::glmer(
+    stats::as.formula(paste0("cbind(Success, Failure) ~ ", var, " + (1|Study)")),
+    data = d,
+    family = binomial,
+    control = ctrl   # uses global ctrl
+  )
+
+  fe <- lme4::fixef(m)
+  s  <- summary(m)$coefficients
+  lvls <- levels(d[[var]])
+
+  add <- purrr::map_dbl(lvls, \(L) {
+    nm <- paste0(var, L)
+    if (nm %in% names(fe)) fe[[nm]] else 0
+  })
+
+  p <- plogis(fe["(Intercept)"] + add)
+  p_ref <- p[1]
+
+  tibble::tibble(
+    moderator      = var,
+    n              = stats::nobs(m),
+    ref_level      = lvls[1],
+    level          = lvls,
+    prevalence_pct = 100 * p,
+    diff_vs_ref_pp = 100 * (p - p_ref),
+    p_value        = purrr::map_dbl(lvls, \(L) get_pval(s, paste0(var, L))),
+    type="cat"
+  )
+}
+
+# Run a set of variables on a trajectory dataset
+run_group <- function(df_traj, vars, success_col, denom_col = "Sample_Size") {
+
+  results <- purrr::map_dfr(vars, \(v) {
+    spec <- purrr::keep(MOD_SPECS, ~ .x$var == v)[[1]]
+
+    if (spec$type == "cont") {
+      fit_cont(df_traj, v, success_col, denom_col)
+    } else {
+      fit_cat(df_traj, v, success_col, denom_col)
+    }
+  })
+
+  list(
+    cont = dplyr::filter(results, type=="cont"),
+    cat  = dplyr::filter(results, type=="cat")
+  )
+}
+```
+
+A summary table for each group of predictors shows how the univariate models perform per conceptual domain (i.e., Background, Trauma-related, and Methodological variables).
+We also provide a summary table for all univariate models of the whole trajectory, also grouped into conceptual domains.
+
+```{r mods-setup-table}
+# P-value formatting
+fmt_p <- function(p) ifelse(is.na(p), "", ifelse(p < .001, "< .001", sprintf("%.3f", p)))
+
+sig <- function(p) dplyr::case_when(is.na(p) ~ "", p < .001 ~ "***", p < .01 ~ "**", p < .05 ~ "*", TRUE ~ "")
+
+run_mods <- function(df, vars, success_col, denom_col="Sample_Size") {
+  purrr::map_dfr(vars, \(v) {
+    spec <- purrr::keep(MOD_SPECS, ~ .x$var == v)[[1]]
+    if (spec$type == "cont") fit_cont(df, v, success_col, denom_col)
+    else fit_cat(df, v, success_col, denom_col)
+  })
+}
+
+# Table Rendering Function
 .na_label <- "-"
 
-# make_group_table function
 make_group_table <- function(group_res, title, na_label = .na_label) {
 
-  # --- A. Continuous ---
+  # Continuous
   cont_tbl <- if (!is.null(group_res$cont) && nrow(group_res$cont) > 0) {
+
     group_res$cont %>%
       dplyr::mutate(
-        Predictor         = dplyr::recode(predictor, !!!mod_labels, .default = predictor),
-        k_shared          = as.integer(Samples),
-        Ref_Prevalence_Cont = sprintf("%.2f%%", prevalence_at_0_pct),
-        Delta_Marginal_Cont = paste0(round(marginal_delta_pp_per_unit, 2)),
-        p_value_shared      = paste0(fmt_p(p_value), ifelse(is.na(p_value), "", paste0(" ", sig(p_value)))),
-        Ref_Name_Cat        = na_label,
-        Ref_Prevalence_Cat  = na_label,
-        Comp_Name_Cat     = na_label,
-        Comp_Prevalence_Cat = na_label,
-        Delta_Marginal_Cat  = na_label
+        Predictor            = dplyr::recode(predictor, !!!MOD_LABELS, .default = predictor),
+        k_shared             = as.integer(Samples),
+        Ref_Prevalence_Cont  = sprintf("%.2f%%", prevalence_at_0_pct),
+        Delta_Marginal_Cont  = paste0(round(marginal_delta_pp_per_unit, 2)),
+        p_value_shared       = paste0(fmt_p(p_value),
+                                      ifelse(is.na(p_value), "", paste0(" ", sig(p_value)))),
+        Ref_Name_Cat         = na_label,
+        Ref_Prevalence_Cat   = na_label,
+        Comp_Name_Cat        = na_label,
+        Comp_Prevalence_Cat  = na_label,
+        Delta_Marginal_Cat   = na_label
       ) %>%
       dplyr::select(dplyr::all_of(UNIFIED_COLS))
+
   } else {
     .empty_unified_tbl()
   }
 
-  # --- B. Categorical ---
+  # Categorical
   cat_tbl <- if (!is.null(group_res$cat) && nrow(group_res$cat) > 0) {
+
     ref_prev <- group_res$cat %>%
       dplyr::filter(level == ref_level) %>%
       dplyr::select(moderator, ref_level, ref_prev = prevalence_pct)
@@ -229,29 +1392,30 @@ make_group_table <- function(group_res, title, na_label = .na_label) {
     group_res$cat %>%
       dplyr::filter(level != ref_level) %>%
       dplyr::left_join(ref_prev, by = c("moderator","ref_level")) %>%
-      dplyr::left_join(lvl_map, by = c("moderator","ref_level" = "orig")) %>%
+      dplyr::left_join(LEVEL_MAP, by = c("moderator","ref_level" = "orig")) %>%
       dplyr::rename(pretty_ref = pretty) %>%
-      dplyr::left_join(lvl_map, by = c("moderator","level" = "orig")) %>%
+      dplyr::left_join(LEVEL_MAP, by = c("moderator","level" = "orig")) %>%
       dplyr::rename(pretty_cmp = pretty) %>%
       dplyr::mutate(
-        Predictor         = dplyr::recode(moderator, !!!mod_labels, .default = moderator),
-        k_shared          = as.integer(n),
-        Ref_Prevalence_Cont = na_label,
-        Delta_Marginal_Cont = na_label,
-        Ref_Name_Cat      = dplyr::coalesce(pretty_ref, ref_level),
-        Ref_Prevalence_Cat  = sprintf("%.1f%%", ref_prev),
-        Comp_Name_Cat     = dplyr::coalesce(pretty_cmp, level),
-        Comp_Prevalence_Cat = sprintf("%.1f%%", prevalence_pct),
-        Delta_Marginal_Cat  = sprintf("%.2f", diff_vs_ref_pp),
-        p_value_shared    = paste0(fmt_p(p_value), ifelse(is.na(p_value), "", paste0(" ", sig(p_value))))
+        Predictor            = dplyr::recode(moderator, !!!MOD_LABELS, .default = moderator),
+        k_shared             = as.integer(n),
+        Ref_Prevalence_Cont  = na_label,
+        Delta_Marginal_Cont  = na_label,
+        Ref_Name_Cat         = dplyr::coalesce(pretty_ref, ref_level),
+        Ref_Prevalence_Cat   = sprintf("%.1f%%", ref_prev),
+        Comp_Name_Cat        = dplyr::coalesce(pretty_cmp, level),
+        Comp_Prevalence_Cat  = sprintf("%.1f%%", prevalence_pct),
+        Delta_Marginal_Cat   = sprintf("%.2f", diff_vs_ref_pp),
+        p_value_shared       = paste0(fmt_p(p_value),
+                                      ifelse(is.na(p_value), "", paste0(" ", sig(p_value))))
       ) %>%
       dplyr::select(dplyr::all_of(UNIFIED_COLS))
+
   } else {
     .empty_unified_tbl()
   }
 
-
-  # ---- C. Bind + render ----
+  # Bind + render
   out <- dplyr::bind_rows(cont_tbl, cat_tbl)
 
   gt::gt(out) %>%
@@ -275,12 +1439,15 @@ make_group_table <- function(group_res, title, na_label = .na_label) {
     ) %>%
     gt::tab_spanner(
       label = gt::md("**Categorical Moderators**"),
-      columns = c(Ref_Name_Cat, Ref_Prevalence_Cat, Comp_Name_Cat, Comp_Prevalence_Cat, Delta_Marginal_Cat),
+      columns = c(Ref_Name_Cat, Ref_Prevalence_Cat, Comp_Name_Cat,
+                  Comp_Prevalence_Cat, Delta_Marginal_Cat),
       id = "cat_group"
     ) %>%
     gt::cols_align("left",  columns = Predictor) %>%
     gt::cols_align("center", columns = -Predictor) %>%
-    gt::cols_width(Predictor ~ gt::px(180), k_shared ~ gt::px(50), p_value_shared ~ gt::px(70)) %>%
+    gt::cols_width(Predictor ~ gt::px(180),
+                   k_shared ~ gt::px(50),
+                   p_value_shared ~ gt::px(70)) %>%
     gt::tab_style(
       style = gt::cell_text(weight = "bold"),
       locations = gt::cells_column_labels(columns = gt::everything())
@@ -293,252 +1460,1646 @@ make_group_table <- function(group_res, title, na_label = .na_label) {
       table.font.names = "Times New Roman"
     )
 }
+
+UNIFIED_COLS <- c(
+  "Predictor", "k_shared",
+  "Ref_Prevalence_Cont", "Delta_Marginal_Cont", "p_value_shared",
+  "Ref_Name_Cat", "Ref_Prevalence_Cat", "Comp_Name_Cat", "Comp_Prevalence_Cat",
+  "Delta_Marginal_Cat"
+)
+
+.empty_unified_tbl <- function() {
+  tibble::tibble(
+    Predictor            = character(),
+    k_shared             = integer(),
+    Ref_Prevalence_Cont  = character(),
+    Delta_Marginal_Cont  = character(),
+    p_value_shared       = character(),
+    Ref_Name_Cat         = character(),
+    Ref_Prevalence_Cat   = character(),
+    Comp_Name_Cat        = character(),
+    Comp_Prevalence_Cat  = character(),
+    Delta_Marginal_Cat   = character()
+  )
+}
 ```
 
 ## 🚀 Low Symptom Trajectory
+
+### Descriptives
+
+We provide additional descriptives based on the Low trajectory variable, using the full dataset.
+
+```{r Low-descriptives}
+trajectory_descriptives(df_Low, "Low")
+```
+
+Below, we fit univariate models of predictors for the Low Trajectory grouped by conceptual domains: Background, Trauma-related, and Methodological variables.
+For continuous moderators, the model describes how the expected trajectory prevalence changes with a one-unit increase in the predictor. 
+For categorical moderators, it compares the prevalence between the reference category and each alternative category.
+Differences (Marginal Δ) are significant at α = .05. 
 
 ```{r Low-mods-fitting}
 # Run the three groups for this trajectory
 bg_res_Low <- run_group(df_Low, success_col = "Low_n", denom_col = "Sample_Size", vars = background_vars)
 tr_res_Low <- run_group(df_Low, success_col = "Low_n", denom_col = "Sample_Size", vars = trauma_vars)
 md_res_Low <- run_group(df_Low, success_col = "Low_n", denom_col = "Sample_Size", vars = method_vars)
-
-all_vars <- c(background_vars, trauma_vars, method_vars)
-all_Low_res <- run_group(df_Low, success_col = "Low_n", denom_col = "Sample_Size", vars = all_vars)
+all_Low_res <- run_group(df_Low, success_col = "Low_n", denom_col = "Sample_Size", vars = all_substantive_vars)
 ```
 
 ```{r Low-mods-tables}
 make_group_table(bg_res_Low, "Low Symptom Trajectory: Socio-Demographic Moderators")
 make_group_table(tr_res_Low, "Low Symptom Trajectory: Trauma-Related Moderators")
 make_group_table(md_res_Low, "Low Symptom Trajectory: Methodological Moderators")
+```
+
+Below is a summary of univariate models of all predictor variables for the Low Trajectory.
+
+```{r Low-mods-tables-summary}
 make_group_table(all_Low_res, "Low Symptom Trajectory: All Moderators")
 ```
-## ⚠️ Increasing Symptom Trajectory
 
-```{r Increasing-mods-fitting}
-# Run the three groups for this trajectory
-bg_res_Increasing <- run_group(df_Increasing, success_col = "Increasing_n", denom_col = "Sample_Size", vars = background_vars)
-tr_res_Increasing <- run_group(df_Increasing, success_col = "Increasing_n", denom_col = "Sample_Size", vars = trauma_vars)
-md_res_Increasing <- run_group(df_Increasing, success_col = "Increasing_n", denom_col = "Sample_Size", vars = method_vars)
-
-all_vars <- c(background_vars, trauma_vars, method_vars)
-all_Increasing_res <- run_group(df_Increasing, success_col = "Increasing_n", denom_col = "Sample_Size", vars = all_vars)
-```
-
-```{r Increasing-mods-tables}
-make_group_table(bg_res_Increasing, "Increasing Symptom Trajectory: Socio-Demographic Moderators")
-make_group_table(tr_res_Increasing, "Increasing Symptom Trajectory: Trauma-Related Moderators")
-make_group_table(md_res_Increasing, "Increasing Symptom Trajectory: Methodological Moderators")
-make_group_table(all_Increasing_res, "Increasing Symptom Trajectory: All Moderators")
-```
 ## 🌿 Decreasing Symptom Trajectory
+
+### Descriptives
+
+We provide additional descriptives based on the Decreasing trajectory variable, using the full dataset.
+
+```{r Decreasing-descriptives}
+trajectory_descriptives(df_Decreasing, "Decreasing")
+```
+
+Below, we fit univariate models of predictors for the Decreasing Trajectory grouped by conceptual domains: Background, Trauma-related, and Methodological variables.
+For continuous moderators, the model describes how the expected trajectory prevalence changes with a one-unit increase in the predictor. 
+For categorical moderators, it compares the prevalence between the reference category and each alternative category.
+Differences (Marginal Δ) are significant at α = .05. 
 
 ```{r Decreasing-mods-fitting}
 # Run the three groups for this trajectory
 bg_res_Decreasing <- run_group(df_Decreasing, success_col = "Decreasing_n", denom_col = "Sample_Size", vars = background_vars)
 tr_res_Decreasing <- run_group(df_Decreasing, success_col = "Decreasing_n", denom_col = "Sample_Size", vars = trauma_vars)
 md_res_Decreasing <- run_group(df_Decreasing, success_col = "Decreasing_n", denom_col = "Sample_Size", vars = method_vars)
-
-all_vars <- c(background_vars, trauma_vars, method_vars)
-all_Decreasing_res <- run_group(df_Decreasing, success_col = "Decreasing_n", denom_col = "Sample_Size", vars = all_vars)
+all_Decreasing_res <- run_group(df_Decreasing, success_col = "Decreasing_n", denom_col = "Sample_Size", vars = all_substantive_vars)
 ```
 
 ```{r Decreasing-mods-tables}
 make_group_table(bg_res_Decreasing, "Decreasing Symptom Trajectory: Socio-Demographic Moderators")
 make_group_table(tr_res_Decreasing, "Decreasing Symptom Trajectory: Trauma-Related Moderators")
 make_group_table(md_res_Decreasing, "Decreasing Symptom Trajectory: Methodological Moderators")
+```
+
+Below is a summary of univariate models of all predictor variables for the Decreasing Trajectory.
+
+```{r Decreasing-mods-tables-summary}
 make_group_table(all_Decreasing_res, "Decreasing Symptom Trajectory: All Moderators")
 ```
+
+## ⚠️ Increasing Symptom Trajectory
+
+### Descriptives
+
+We provide additional descriptives based on the Increasing trajectory variable, using the full dataset.
+
+```{r Increasing-descriptives}
+trajectory_descriptives(df_Increasing, "Increasing")
+```
+
+Below, we fit univariate models of predictors for the Increasing Trajectory grouped by conceptual domains: Background, Trauma-related, and Methodological variables.
+For continuous moderators, the model describes how the expected trajectory prevalence changes with a one-unit increase in the predictor. 
+For categorical moderators, it compares the prevalence between the reference category and each alternative category.
+Differences (Marginal Δ) are significant at α = .05. 
+
+```{r Increasing-mods-fitting}
+# Run the three groups for this trajectory
+bg_res_Increasing <- run_group(df_Increasing, success_col = "Increasing_n", denom_col = "Sample_Size", vars = background_vars)
+tr_res_Increasing <- run_group(df_Increasing, success_col = "Increasing_n", denom_col = "Sample_Size", vars = trauma_vars)
+md_res_Increasing <- run_group(df_Increasing, success_col = "Increasing_n", denom_col = "Sample_Size", vars = method_vars)
+all_Increasing_res <- run_group(df_Increasing, success_col = "Increasing_n", denom_col = "Sample_Size", vars = all_substantive_vars)
+```
+
+```{r Increasing-mods-tables}
+make_group_table(bg_res_Increasing, "Increasing Symptom Trajectory: Socio-Demographic Moderators")
+make_group_table(tr_res_Increasing, "Increasing Symptom Trajectory: Trauma-Related Moderators")
+make_group_table(md_res_Increasing, "Increasing Symptom Trajectory: Methodological Moderators")
+```
+
+Below is a summary of univariate models of all predictor variables for the Increasing Trajectory.
+
+```{r Increasing-mods-tables-summary}
+make_group_table(all_Increasing_res, "Increasing Symptom Trajectory: All Moderators")
+```
+
 ## 🩸 High Symptom Trajectory
+
+### Descriptives
+
+We provide additional descriptives based on the High trajectory variable, using the full dataset.
+
+```{r High-descriptives}
+trajectory_descriptives(df_High, "High")
+```
+
+Below, we fit univariate models of predictors for the High Trajectory grouped by conceptual domains: Background, Trauma-related, and Methodological variables.
+For continuous moderators, the model describes how the expected trajectory prevalence changes with a one-unit increase in the predictor. 
+For categorical moderators, it compares the prevalence between the reference category and each alternative category.
+Differences (Marginal Δ) are significant at α = .05. 
 
 ```{r High-mods-fitting}
 # Run the three groups for this trajectory
 bg_res_High <- run_group(df_High, success_col = "High_n", denom_col = "Sample_Size", vars = background_vars)
 tr_res_High <- run_group(df_High, success_col = "High_n", denom_col = "Sample_Size", vars = trauma_vars)
 md_res_High <- run_group(df_High, success_col = "High_n", denom_col = "Sample_Size", vars = method_vars)
-
-all_vars <- c(background_vars, trauma_vars, method_vars)
-all_High_res <- run_group(df_High, success_col = "High_n", denom_col = "Sample_Size", vars = all_vars)
+all_High_res <- run_group(df_High, success_col = "High_n", denom_col = "Sample_Size", vars = all_substantive_vars)
 ```
 
 ```{r High-mods-tables}
 make_group_table(bg_res_High, "High Symptom Trajectory: Socio-Demographic Moderators")
 make_group_table(tr_res_High, "High Symptom Trajectory: Trauma-Related Moderators")
 make_group_table(md_res_High, "High Symptom Trajectory: Methodological Moderators")
+```
+
+Below is a summary of univariate models of all predictor variables for the High Trajectory.
+
+```{r High-mods-tables-summary}
 make_group_table(all_High_res, "High Symptom Trajectory: All Moderators")
 ```
 
 ## 🌗 Moderate Symptom Trajectory
+
+### Descriptives
+
+We provide additional descriptives based on the Moderate trajectory variable, using the full dataset.
+
+```{r Moderate-descriptives}
+trajectory_descriptives(df_Moderate, "Moderate")
+```
+
+Below, we fit univariate models of predictors for the Moderate Trajectory grouped by conceptual domains: Background, Trauma-related, and Methodological variables.
+For continuous moderators, the model describes how the expected trajectory prevalence changes with a one-unit increase in the predictor. 
+For categorical moderators, it compares the prevalence between the reference category and each alternative category.
+Differences (Marginal Δ) are significant at α = .05. 
 
 ```{r Moderate-mods-fitting}
 # Run the three groups for this trajectory
 bg_res_Moderate <- run_group(df_Moderate, success_col = "Moderate_n", denom_col = "Sample_Size", vars = background_vars)
 tr_res_Moderate <- run_group(df_Moderate, success_col = "Moderate_n", denom_col = "Sample_Size", vars = trauma_vars)
 md_res_Moderate <- run_group(df_Moderate, success_col = "Moderate_n", denom_col = "Sample_Size", vars = method_vars)
-
-all_vars <- c(background_vars, trauma_vars, method_vars)
-all_Moderate_res <- run_group(df_Moderate, success_col = "Moderate_n", denom_col = "Sample_Size", vars = all_vars)
+all_Moderate_res <- run_group(df_Moderate, success_col = "Moderate_n", denom_col = "Sample_Size", vars = all_substantive_vars)
 ```
 
 ```{r Moderate-mods-tables}
 make_group_table(bg_res_Moderate, "Moderate Symptom Trajectory: Socio-Demographic Moderators")
 make_group_table(tr_res_Moderate, "Moderate Symptom Trajectory: Trauma-Related Moderators")
 make_group_table(md_res_Moderate, "Moderate Symptom Trajectory: Methodological Moderators")
+```
+
+Below is a summary of univariate models of all predictor variables for the Moderate Trajectory.
+
+```{r Moderate-mods-tables-summary}
 make_group_table(all_Moderate_res, "Moderate Symptom Trajectory: All Moderators")
 ```
 
-# Tables for Paper
-## Continuous Moderators Summary Table
+# Model 2: Multivariate BRMS Models with Missing-Data Imputation
 
-```{r cont-mods-summary-table}
-# enforce trajectory order
-traj_order <- c("Low","Decreasing","Increasing","High","Moderate")
+The second modelling stage estimates multivariate Bayesian regression models in which all moderators are entered simultaneously using a binomial likelihood. This approach allows us to assess the unique contribution of each predictor while adjusting for the influence of all other moderators in the model. By modelling all predictors jointly, these analyses move beyond simple associations and provide a more rigorous test of independent effects.
 
-#define trajectory fits
-fits_by_traj <- list(
-  Low        = fits_cont_Low,
-  Decreasing = fits_cont_Decreasing,
-  Increasing = fits_cont_Increasing,
-  High       = fits_cont_High,
-  Moderate   = fits_cont_Moderate
-)
+Continuous predictors are standardised to place effects on a comparable scale, and categorical predictors are entered as factors with defined reference categories. Missing values in continuous moderators are handled directly within the Bayesian framework using model-based imputation, allowing all available information to be retained rather than relying on listwise deletion. Prior to model fitting, correlation matrices are used to identify highly collinear predictors, with variables exceeding a correlation of .95 excluded to ensure model stability.
 
-# build combined table
-tbl_all <- bind_rows(fits_by_traj, .id = "Trajectory") %>%
-  mutate(
-    Trajectory = factor(Trajectory, levels = traj_order),
-    Predictor = dplyr::recode(predictor, !!!mod_labels, .default = predictor),
-    Predictor = factor(Predictor, levels = mod_levels),
-    `Prevalence (0%)` = sprintf("%.1f%%", prevalence_at_0_pct),
-    !!delta_col := marginal_delta_pp_per_unit,
-    `P-value` = paste0(fmt_p(p_value), ifelse(is.na(p_value), "", paste0(" ", sig(p_value)))),
-    Slope = slope
-  ) %>%
-  select(Trajectory, Predictor, Samples, `Prevalence (0%)`, Slope, dplyr::all_of(delta_col), `P-value`) %>%
-  arrange(Trajectory, Predictor)
+For each trajectory (Low, Decreasing, Increasing, High, and Moderate), three nested models are estimated: a background-only model, a model adding trauma-related moderators, and a full model including methodological variables. This hierarchical structure allows us to evaluate whether additional domains of moderators improve explanatory power beyond basic sample characteristics. Model results are summarised using posterior medians and 95% credible intervals, with convergence diagnostics used to verify estimation quality, and predictive performance compared across models using leave-one-out cross-validation.
 
-# ensure UTF-8
-tbl_all_utf8 <- tbl_all
-names(tbl_all_utf8) <- enc2utf8(names(tbl_all_utf8))
-tbl_all_utf8 <- mutate(tbl_all_utf8, across(where(is.character), enc2utf8))
+## Correlation of Continous Predictors
 
-# render one big table, grouped by Trajectory
-tbl_all_utf8 %>%
-  gt(groupname_col = "Trajectory") %>%
-  cols_width(Predictor ~ px(220)) %>%
-  cols_align(align = "center", columns = -Predictor) %>%
-  cols_align(align = "left",   columns = Predictor) %>%
-  tab_style(
-    style = cell_text(weight = "bold"),
-    locations = list(
-      cells_column_labels(columns = everything()),    # bold headers
-      cells_row_groups(groups = everything())         # bold group labels
+Since the models incorporate multiple moderators simultaneously, it is important to understand how strongly continuous variables relate to one another. High correlations may signal redundancy or confounding. By computing and visualising the correlation matrix, we obtain an initial sense of the structure among moderators, helping us to anticipate potential collinearity and refine the interpretation of subsequent model coefficients.
+Here, we first provide the correlation matrix of continuous variables of the whole dataset.
+
+```{r correlation-table,  results='asis', message=FALSE}
+# GT Correlation Table for Continuous Predictors
+generate_correlation_gt <- function(df, vars = NULL, trajectory = NULL, show_warnings = TRUE) {
+  
+  # Get continuous variables from MOD_SPECS
+  cont_vars <- MOD_SPECS |> 
+    purrr::keep(~ .x$type == "cont") |> 
+    purrr::map_chr("var")
+  
+  # Keep only variables present in df
+  cont_vars <- intersect(cont_vars, names(df))
+  
+  # Compute correlation matrix
+  cor_mat <- round(
+    cor(df[, cont_vars], use = "pairwise.complete.obs"),
+    2
+  )
+  
+  # Convert to long format
+  cor_df <- cor_mat %>%
+    as.data.frame() %>%
+    tibble::rownames_to_column("Var1") %>%
+    tidyr::pivot_longer(-Var1, names_to = "Var2", values_to = "Correlation")
+  
+  # Initialize exclusions
+  exclude_vars <- character(0)
+  
+  # high correlation check
+  if (show_warnings) {
+    
+    # Filter for high correlations and exclude self-pairs + duplicates
+    high_cor_df <- cor_df %>%
+      dplyr::filter(abs(Correlation) > 0.95 & Var1 != Var2) %>%
+      dplyr::rowwise() %>%
+      dplyr::filter(Var1 < Var2) %>%
+      dplyr::ungroup()
+    
+    # If any high-correlation pairs exist:
+    if (nrow(high_cor_df) > 0) {
+      
+      # Add pretty labels
+      high_cor_df$Pretty1 <- MOD_LABELS[high_cor_df$Var1]
+      high_cor_df$Pretty2 <- MOD_LABELS[high_cor_df$Var2]
+      
+      # Define exclusions for downstream analysis
+      exclude_vars <- unique(c(high_cor_df$Var1, high_cor_df$Var2))
+      
+      # Print warning message
+      cat("\n")
+      cat("--- WARNING: HIGHLY CORRELATED VARIABLES (Correlation > 0.95) ---\n")
+      cat(
+        paste0(
+          "The following variable pairs have a correlation greater than 0.95 and ",
+          "will be candidates for **exclusion** from the analysis for the '", 
+          trajectory, "' trajectory:\n"
+        )
+      )
+      
+      # Print table
+      print(
+        high_cor_df %>%
+          dplyr::select(Pretty1, Pretty2, Correlation) %>%
+          dplyr::rename(Variable_1 = Pretty1, Variable_2 = Pretty2) %>%
+          data.frame()
+      )
+      
+      cat("\nVariables flagged for exclusion:\n")
+      print(exclude_vars)
+      cat("\n")
+      
+    } else {
+      cat("\n--- NOTE: No variable pairs found with correlation > 0.95. ---\n\n")
+    }
+  }
+  
+  # Add pretty labels for GT table
+  cor_df$Pretty1 <- MOD_LABELS[cor_df$Var1]
+  cor_df$Pretty2 <- MOD_LABELS[cor_df$Var2]
+  
+  # 6. Pivot to wide format
+  cor_wide <- cor_df %>%
+    dplyr::select(Pretty1, Pretty2, Correlation) %>%
+    tidyr::pivot_wider(
+      names_from = Pretty2,
+      values_from = Correlation
+    ) %>%
+    dplyr::rename(Variable = Pretty1)
+  
+  # Build GT table
+  cor_gt <- cor_wide %>%
+    gt::gt(rowname_col = "Variable") %>%
+    gt::tab_header(
+      title = paste0(trajectory, " Trajectory Correlation Matrix: Continuous Variables"),
+      subtitle = "Pearson correlations (pairwise complete observations)"
+    ) %>%
+    gt::fmt_number(columns = gt::everything(), decimals = 2) %>%
+    gt::data_color(
+      columns = gt::everything(),
+      colors = scales::col_numeric(
+        palette = c("red", "white", "red"),
+        domain = c(-1, 1)
+      )
+    ) %>%
+    gt::tab_options(
+      table.font.size = 12,
+      data_row.padding = gt::px(3),
+      column_labels.font.weight = "bold",
+      table.font.names = "Times New Roman"
     )
-  ) %>%
-  tab_options(table.width = pct(100)) %>%
-  opt_table_font(font = "Times New Roman") 
-
-# export to word
-df <- tbl_all_utf8
-
-ft <- flextable(df)
-ft <- width(ft, j = "Predictor", width = 2.2)
-ft <- align(ft, j = setdiff(names(df), "Predictor"), align = "center", part = "all")
-ft <- align(ft, j = "Predictor", align = "left", part = "all")
-ft <- bold(ft, part = "header")
-ft <- font(ft, fontname = "Times New Roman", part = "all")
-ft <- autofit(ft)
-
-doc <- read_docx()
-doc <- body_add_flextable(doc, ft)
-doc <- body_end_section_landscape(doc)
-print(doc, target = "Continuous_Moderator_Table.docx")
-```
-
-## Categorical Moderators Summary Table
-
-```{r cat-mods-summary-table}
-# enforce trajectory order
-traj_order <- c("Low","Decreasing","Increasing","High","Moderate")
-
-# find and combine all 'fits_cat_*' data frames
-fit_names <- ls(pattern = "^fits_cat_")
-
-if (length(fit_names) == 0) {
-  knitr::kable(data.frame(Note = "No categorical moderator results found."))
-} else {
-  all_fits_cat <- mget(fit_names) %>%
-    list_rbind(names_to = "traj") %>%
-    mutate(traj = str_remove(traj, "fits_cat_"),
-         traj = factor(traj, levels = traj_order))
-
-  # Prepare the final long table data for gt
-  long_table_data <- all_fits_cat %>%
-    # Add reference prevalence to each row for comparison
-    left_join(
-      y  = filter(., level == ref_level) %>% select(traj, moderator, ref_prev = prevalence_pct),
-      by = c("traj", "moderator")
-    ) %>%
-    filter(level != ref_level) %>%
-    # Create and format the final columns
-    mutate(
-      Predictor               = recode(moderator, !!!mod_labels, .default = moderator),
-      `Reference (Name)`      = coalesce(lvl_map$pretty[match(ref_level, lvl_map$orig)], ref_level),
-      `Comparison (Name)`     = coalesce(lvl_map$pretty[match(level, lvl_map$orig)], level),
-      `Samples (k)`           = n,
-      `Reference Prevalence`  = sprintf("%.1f%%", ref_prev),
-      `Comparison Prevalence` = sprintf("%.1f%%", prevalence_pct),
-      !!delta_col      := round(diff_vs_ref_pp, 2),
-      `p-value`               = paste0(fmt_p(p_value), " ", sig(p_value))
-    ) %>%
-    # Select and order the final columns
-    select(
-      traj, # This column is kept for grouping
-      Predictor,
-      `Samples (k)`,
-      `Reference (Name)`,
-      `Reference Prevalence`,
-      `Comparison (Name)`,
-      `Comparison Prevalence`,
-      !!delta_col,
-      `p-value`
-    ) %>%
-    arrange(traj, Predictor, `Comparison (Name)`)
-
-  # Build the final table, grouped by trajectory
-  long_table_data %>%
-    gt(groupname_col = "traj") %>%
-    # Apply styling
-    cols_width(Predictor ~ px(220)) %>%
-    cols_align(align = "center", columns = where(is.numeric) | where(is.character)) %>%
-    cols_align(align = "left", columns = c(Predictor, `Reference (Name)`, `Comparison (Name)`)) %>%
-    tab_style(
-      style = cell_text(weight = "bold"),
-      locations = list(
-      cells_column_labels(columns = everything()),    # bold headers
-      cells_row_groups(groups = everything())         # bold group labels
-    )
-     ) %>%
-  tab_options(table.width = pct(100)) %>%
-  opt_table_font(font = "Times New Roman") 
 }
 
-# export to word
-df2 <-  long_table_data
+correlations_df <- generate_correlation_gt(df_moderation, show_warnings = FALSE)
+correlations_df
+```
 
-ft <- flextable(df2)
-ft <- width(ft, j = "Predictor", width = 2.2)
-ft <- align(ft, j = setdiff(names(df2), "Predictor"), align = "center", part = "all")
-ft <- align(ft, j = "Predictor", align = "left", part = "all")
-ft <- bold(ft, part = "header")
-ft <- font(ft, fontname = "Times New Roman", part = "all")
-ft <- autofit(ft)
+Due to high collinearity, the variable "Time span of the study (months)" (a.k.a. TP1-TPX) will be excluded from all analyses for this Bayesian model. Trajectory-specific correlation matrices are provided in the corresponding sections of this model and variables that have a correlation index of > .95 are excluded from the analyses. 
 
-doc <- read_docx()
-doc <- body_add_flextable(doc, ft)
-doc <- body_end_section_landscape(doc)
-print(doc, target = "Categorical_Moderator_Table.docx")
+## Data Preperation for BRMS
+
+Before fitting multivariate models, the data are prepared for Bayesian estimation and missing-data imputation. Continuous moderators are standardised to place them on a comparable scale, and categorical variables are recoded to ensure proper factor structure. This preparation ensures stable estimation and interpretable coefficients in the multivariate analyses.
+
+```{r BRMS-data-prep}
+# Function to apply model specifications to a data frame
+apply_mod_specs <- function(df, mod_specs) {
+  
+  # Iterate over each specification
+  for (spec in mod_specs) {
+    
+    var  <- spec$var
+    type <- spec$type
+    
+    # Skip if variable is not in the data frame
+    if (!var %in% names(df)) next
+    
+    
+    # Handle continuous variables
+    if (identical(type, "cont")) {
+      
+      x_raw <- df[[var]]
+      # Coerce to numeric
+      x_num <- suppressWarnings(as.numeric(x_raw))
+      
+      # Warning check
+      if (all(is.na(x_num)) && any(!is.na(x_raw))) {
+        warning("Variable '", var, "' became all NA when coerced to numeric.")
+      }
+      
+      df[[var]] <- x_num
+      next
+    }
+    
+    
+    # Handle categorical variables
+    if (identical(type, "cat")) {
+      
+      # Clean string values
+      x <- df[[var]] |>
+        as.character() |>
+        trimws() |>
+        stringr::str_squish() 
+
+      
+      # Apply level mapping
+      if (!is.null(spec$levels)) {
+        lvl_map  <- spec$levels
+        raw_keys <- names(lvl_map)
+        
+        # Apply mapping
+        matched  <- x %in% raw_keys
+        x[matched] <- lvl_map[x[matched]]
+        
+        # Report unmatched raw values
+        unmatched_raw <- sort(unique(x_raw[!(x_raw %in% raw_keys) & !is.na(x_raw)]))
+        if (length(unmatched_raw) > 0L) {
+          message(
+            "apply_mod_specs: in variable '", var,
+            "', some raw values were not mapped by 'levels': ",
+            paste(unmatched_raw, collapse = ", ")
+          )
+        }
+      }
+      
+      
+      # Filter to keep only specified levels/labels
+      if (!is.null(spec$keep)) {
+        if (!is.null(spec$levels)) {
+          # Get the mapped labels
+          keep_labels <- unname(spec$levels[spec$keep])
+        } else {
+          # Use 'keep' values directly
+          keep_labels <- spec$keep
+        }
+        
+        # Set non-kept values to NA
+        x[!(x %in% keep_labels)] <- NA
+      }
+      
+      
+      # Convert to factor
+      x <- factor(x)
+      levels(x) <- trimws(levels(x))
+      
+      # Set reference level
+      if (!is.null(spec$ref)) {
+        ref_label <- spec$ref
+        
+        # Use mapped label for reference if available
+        if (!is.null(spec$levels) && spec$ref %in% names(spec$levels)) {
+          ref_label <- spec$levels[[spec$ref]]
+        }
+        
+        # Relevel
+        if (ref_label %in% levels(x)) {
+          x <- stats::relevel(x, ref = ref_label)
+        } else {
+          warning(
+            "Reference level '", spec$ref,
+            "' (mapped to '", ref_label,
+            "') not found in levels of '", var, "'."
+          )
+        }
+      }
+      
+      df[[var]] <- x
+    }
+  }
+  
+  df
+}
+
+# Function to prepare data for brms (apply specs and scale/factor)
+prepare_data_brms <- function(df, mod_specs = MOD_SPECS, exclude = NULL) {
+  
+  # Remove excluded variables from df entirely
+  if (!is.null(exclude)) {
+    df <- df %>% dplyr::select(-dplyr::all_of(exclude))
+  }
+  
+  # Extract names of continuous variables
+  cont_vars <- purrr::map_chr(
+    purrr::keep(mod_specs, ~ .x$type == "cont"),
+    "var"
+  )
+  
+  # Extract names of categorical variables
+  cat_vars <- purrr::map_chr(
+    purrr::keep(mod_specs, ~ .x$type == "cat"),
+    "var"
+  )
+  
+  # Identify variables present in df
+  cont_vars_in_df <- intersect(cont_vars, names(df))
+  cat_vars_in_df  <- intersect(cat_vars,  names(df))
+  
+  # Apply all variable specifications
+  df <- apply_mod_specs(df, mod_specs)
+  
+  # Scale continuous variables
+  if (length(cont_vars_in_df) > 0L) {
+    df <- df %>%
+      dplyr::mutate(
+        dplyr::across(
+          dplyr::all_of(cont_vars_in_df),
+          ~ {
+            v <- .
+            
+            v_num <- suppressWarnings(as.numeric(v))
+            
+            # Warning check
+            if (all(is.na(v_num)) && any(!is.na(v))) {
+              warning("After coercion, variable '", dplyr::cur_column(),
+                      "' is all NA; scaling will return all NA.")
+            }
+            
+            # Center and scale
+            as.numeric(scale(v_num))
+          }
+        )
+      )
+  }
+  
+  # Ensure categorical variables are factors
+  if (length(cat_vars_in_df) > 0L) {
+    df <- df %>%
+      dplyr::mutate(
+        dplyr::across(
+          dplyr::all_of(cat_vars_in_df),
+          ~ factor(.)
+        )
+      )
+  }
+  
+  # Drop unused levels
+  df <- droplevels(df)
+  
+  df
+}
+```
+
+## BMRS setup
+
+The Bayesian models are implemented using the brms package, which provides flexible model specification and seamless integration of missing-data imputation via the mi() syntax. The chosen sampling settings (2 chains, 3000 iterations) balance computational feasibility with the need for stable posterior estimates.
+
+```{r BRMS-setup}
+brms_args <- list(
+  family    = binomial(link = "logit"),
+  chains    = 2,
+  iter      = 3000,
+  warmup    = 1000,
+  cores     = 8,
+  seed      = 1,
+  backend   = "cmdstanr",
+  refresh   = 0,
+  control   = list(adapt_delta = .85)
+)
+```
+
+## Portable Functions for Model Fitting
+
+This section defines functions that construct the multivariate models automatically for each trajectory. Importantly, missing predictors are estimated through univariate imputation. This approach avoids the loss of information that would occur with listwise deletion and enables the inclusion of a broad predictor set even when individual studies did not report all moderators.
+
+### Fitting the Multivariate Bayesian Models
+
+The multivariate models move beyond simple associations and estimate the unique contribution of each predictor while adjusting for all others in the model. We estimate three nested models per trajectory:
+
+M1: Background-variables-only model
+
+M2: Background + Trauma-related variables model
+
+M3: Full model (Background + Trauma + Methodological variables)
+
+Comparing these models helps determine whether trauma-related or methodological factors contribute additional explanatory value beyond basic sample characteristics.
+These groups are widely the same across trajectories, but may differ slightly based on exclusions due to collinearity.
+
+```{r BRMS-model-fitting-functions}
+## Build predictor families
+build_predictor_families <- function(df, cont_vars, cat_vars) {
+  
+  fams <- setNames(
+    rep(list(gaussian()), length(cont_vars)),
+    cont_vars
+  )
+  
+  for (v in cat_vars) {
+    if (!v %in% names(df)) next
+    
+    x <- factor(df[[v]])
+    nlev <- nlevels(x)
+    
+    if (nlev < 2) {
+      stop("Variable ", v, " has <2 levels after cleaning.")
+    }
+    
+    # Use categorical() for ALL categorical predictors (2+ levels)
+    fams[[v]] <- categorical()
+  }
+  
+  fams
+}
+
+
+## univariate imputation formula 
+fit_brms_models_mi <- function(df,
+                               success_col_name,
+                               model_vars,
+                               cont_vars,
+                               brms_args) {
+  if (!success_col_name %in% names(df)) {
+    stop("Outcome variable '", success_col_name, "' not found in df.")
+  }
+  
+  model_vars <- intersect(model_vars, names(df))
+  model_vars <- setdiff(model_vars, success_col_name)
+  
+  if (length(model_vars) == 0L) {
+    stop("No valid predictor variables found in 'model_vars'.")
+  }
+  
+  # vars that have missingness
+  vars_with_na_raw <- model_vars[
+    sapply(df[, model_vars, drop = FALSE], function(x) any(is.na(x)))
+  ]
+  
+  # continuous vars are MI-eligible in brms
+  vars_with_na <- intersect(vars_with_na_raw, cont_vars)
+  
+  vars_without_na <- setdiff(model_vars, vars_with_na_raw)
+  
+  rhs_terms <- c(
+    if (length(vars_with_na)) paste0("mi(", vars_with_na, ")"),
+    vars_without_na
+  )
+  
+  main_formula <- bf(
+    as.formula(
+      paste0(
+        success_col_name,
+        " | trials(Sample_Size) ~ ",
+        paste(rhs_terms, collapse = " + ")
+      )
+    ),
+    family = binomial(link = "logit")
+  )
+  
+  # Case 1: no MI → simple model
+  if (length(vars_with_na) == 0L) {
+    default_priors <- get_prior(formula = main_formula, data = df)
+    fit <- do.call(
+      brm,
+      c(
+        list(
+          formula = main_formula,
+          data    = df,
+          prior   = default_priors
+        ),
+        brms_args
+      )
+    )
+    return(fit)
+  }
+  
+  # Case 2: MI for continuous vars
+  mi_formulas <- lapply(vars_with_na, function(v) {
+    bf(as.formula(paste0(v, " | mi() ~ 1")), family = gaussian())
+  })
+  
+  full_formula <- Reduce(`+`, c(list(main_formula), mi_formulas))
+  
+  default_priors <- get_prior(formula = full_formula, data = df)
+  
+  fit <- do.call(
+    brm,
+    c(
+      list(
+        formula = full_formula,
+        data    = df,
+        prior   = default_priors
+      ),
+      brms_args
+    )
+  )
+  
+  fit
+}
+
+# looping logic for running all models for one trajectory
+fit_brms_trajectory_models <- function(df,
+                                       success_col_name,
+                                       cont_vars,
+                                       cat_vars,
+                                       mod_specs,
+                                       background_vars,
+                                       trauma_vars,
+                                       method_vars,
+                                       brms_args,
+                                       exclude_vars = NULL) {
+  
+  message("Starting fitting for trajectory with outcome: ", success_col_name)
+  
+  # multicollinearity filtering step
+  
+  if (!is.null(exclude_vars) && length(exclude_vars) > 0) {
+    message("\nExcluding variables due to high correlations:\n",
+            paste(" -", exclude_vars, collapse = "\n"))
+  }
+  
+  cont_vars       <- setdiff(cont_vars, exclude_vars)
+  cat_vars        <- setdiff(cat_vars, exclude_vars)
+  background_vars <- setdiff(background_vars, exclude_vars)
+  trauma_vars     <- setdiff(trauma_vars, exclude_vars)
+  method_vars     <- setdiff(method_vars, exclude_vars)
+
+  # Model variable setups
+  
+  model_list <- list(
+    model_1_bg        = background_vars,
+    model_2_bg_trauma = c(background_vars, trauma_vars),
+    model_3_full      = c(background_vars, trauma_vars, method_vars)
+  )
+
+  # Fit the models
+  
+  purrr::map(
+    model_list,
+    ~ fit_brms_models_mi(
+      df               = df,
+      success_col_name = success_col_name,
+      model_vars       = .x,
+      cont_vars        = cont_vars,
+      brms_args        = brms_args
+    )
+  )
+}
+```
+
+### Summary Tables
+
+We translate posterior distributions into clear summaries that report the median effect size and 95% credible interval for each predictor. 
+Predictors whose credible intervals exclude zero are flagged as potentially important. Presenting all three models side-by-side allows readers to see how effects evolve as more predictors are added.
+
+Model diagnostics summarise convergence metrics such as R-hat and effective sample sizes. These indicators ensure that posterior estimates are reliable and that inferences from the multivariate models can be trusted.
+
+Finally, the multivariate models are compared using leave-one-out cross-validation (LOO-CV). This provides an estimate of the relative predictive accuracy of the three model specifications and helps assess whether additional moderator domains improve the overall model fit for each trajectory. LOO-CV ranks models by how well they predict unseen data using ELPD, where higher ELPD values indicate better predictive accuracy. The best model has ΔELPD = 0, and other models have more negative ΔELPD values the worse they perform, with the SE showing how confidently we can distinguish those differences. Optional model weights summarize each model’s relative predictive support, where higher weights signal a model that is more likely to generalize well to new data.
+
+```{r BRMS-gt-table}
+# Predictor Summary Table Function
+generate_predictor_table_gt <- function(fitted_models,
+                                        success_col_name,
+                                        trajectory_name,
+                                        mod_specs = MOD_SPECS) {
+  
+  var_names  <- purrr::map_chr(mod_specs, "var") # Extract variable names from specifications
+  var_labels <- purrr::map_chr(mod_specs, "label") |> # Extract variable labels
+    stats::setNames(var_names) # Name labels with variable names
+  
+  find_base_var <- function(t0) {
+
+    # Order candidate variable names from longest to shortest
+    hits <- var_names[order(nchar(var_names), decreasing = TRUE)]
+  
+    # Keep only those whose names appear in the term
+    hit <- purrr::keep(hits, ~ grepl(.x, t0))
+  
+    # If nothing matches, return original term
+    if (length(hit) == 0) return(t0)
+  
+    # Return the first (i.e., longest match)
+    hit[[1]]
+  }
+
+  all_coefs <- purrr::map_dfr(names(fitted_models), function(model_name) { # Iterate over fitted models
+    coefs <- try(brms::fixef(fitted_models[[model_name]], summary = TRUE), silent = TRUE) # Get fixed effects summary
+    if (inherits(coefs, "try-error") || length(coefs) == 0) return(NULL) # Skip if error or no coefficients
+    
+    as.data.frame(coefs) %>%
+      tibble::rownames_to_column(var = "Term") %>% # Convert row names (terms) to a column
+      dplyr::rename( # Rename columns for clarity
+        Median   = Estimate,
+        CI_Lower = Q2.5,
+        CI_Upper = Q97.5
+      ) %>%
+      dplyr::mutate(Model = model_name) # Add model name column
+  })
+  
+  coefficient_data <- all_coefs %>%
+    dplyr::filter(!grepl("Intercept", Term)) %>% # Remove intercept terms
+    dplyr::mutate(
+      Term = gsub("^Lown_|^Decreasingn_|^Increasingn_|^Highn_|^Moderaten_", "", Term), # Clean up term names (remove prefixes)
+      Term = sub("^mi_", "", Term),
+      Term = sub("^mi", "", Term)
+ # Remove 'mi' (multiple imputation indicator)
+    ) %>%
+    dplyr::rowwise() %>% # Operate row by row
+    dplyr::mutate(
+      BaseVar = find_base_var(Term), # Find the base variable name
+      Level   = trimws(sub(paste0("^", BaseVar), "", Term)), # Extract the level/suffix of the variable
+      VarLabel = ifelse(BaseVar %in% names(var_labels), # Get the descriptive label for the base variable
+                        var_labels[BaseVar],
+                        BaseVar),
+      Predictor = ifelse( # Create the final predictor label
+        Level == "" | is.na(Level),
+        VarLabel,
+        paste0(VarLabel) # If Level exists, combine it with VarLabel
+      )
+    ) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate(
+      Effect = paste0( # Format effect size and 95% CI
+        sprintf("%.2f", Median), " [",
+        sprintf("%.2f", CI_Lower), ", ",
+        sprintf("%.2f", CI_Upper), "]"
+      ),
+      Important = ifelse(CI_Lower > 0 | CI_Upper < 0, "Yes", "No"), # Check if CI excludes zero
+      Model = dplyr::recode( # Recode model names for display
+        Model,
+        "model_1_bg"        = "M1 (Background)",
+        "model_2_bg_trauma" = "M2 (Background + Trauma)",
+        "model_3_full"      = "M3 (Background + Trauma + Methodological)"
+      )
+    ) %>%
+    dplyr::select(Predictor, Model, Effect, Important) # Select final columns
+  
+  coefficient_wide <- coefficient_data %>%
+    tidyr::pivot_wider( # Reshape data from long to wide format
+      names_from  = Model, # Columns created based on Model
+      values_from = c(Effect, Important), # Values to spread across new columns
+      names_glue  = "{.value}_{Model}" # Naming convention for new columns
+    )
+  
+  effect_cols     <- grep("^Effect_", names(coefficient_wide), value = TRUE) # Identify Effect columns
+  importance_cols <- grep("^Important_", names(coefficient_wide), value = TRUE) # Identify Important columns
+  
+  effect_labels <- stats::setNames( # Create labels for Effect columns
+    gsub("Effect_", "Effect [95% CI] – ", effect_cols),
+    effect_cols
+  )
+  
+  importance_labels <- stats::setNames( # Create labels for Important columns
+    gsub("Important_", "Important? – ", importance_cols),
+    importance_cols
+  )
+  
+  coefficient_wide %>%
+    gt::gt(rowname_col = "Predictor") %>% # Initialize gt table, setting Predictor as row names
+    gt::tab_header( # Add table title and subtitle
+      title    = gt::md(glue::glue("**Predictor Summary: {trajectory_name} Trajectory**")),
+      subtitle = "Median, 95% Credible Interval, and Predictor Importance"
+    ) %>%
+    gt::cols_label( # Apply custom column labels
+      !!!effect_labels,
+      !!!importance_labels
+    ) %>%
+    gt::data_color( # Color cells based on 'Important' status
+      columns = dplyr::all_of(importance_cols),
+      colors  = function(x) dplyr::case_when(
+        x == "Yes" ~ "#d4edda", # Light green for 'Yes'
+        x == "No"  ~ "white",   # White for 'No'
+        TRUE       ~ "white"
+      )
+    ) %>%
+    gt::tab_options(
+      table.font.size = 12,
+      data_row.padding = gt::px(3),
+      column_labels.font.weight = "bold",
+      table.font.names = "Times New Roman"
+    )
+}
+
+# Diagnostic Table Function
+diagnostic_gt_brms <- function(model,
+                               model_name = NULL,
+                               trajectory_name = NULL,
+                               include = c("fixed", "sigma"),
+                               title = "Model Diagnostics",
+                               subtitle = NULL,
+                               mod_labels = MOD_LABELS) {
+
+  s       <- summary(model) # Get the model summary
+  parts <- list() # Initialize list to store results
+  
+  pretty_from_mod <- function(term) {
+    t0 <- gsub("`", "", term)
+    t0 <- gsub("^mi\\(|\\)$", "", t0)
+  
+    # 1. Exact match first
+    if (t0 %in% names(mod_labels)) {
+      return(mod_labels[[t0]])
+    }
+  
+    # 2. Ordered substring matching (longest names first)
+    hits <- names(mod_labels)[order(nchar(names(mod_labels)), decreasing = TRUE)]
+    hit  <- purrr::keep(hits, ~ grepl(.x, t0))
+  
+    if (length(hit) >= 1) {
+      return(mod_labels[[hit[1]]])
+    }
+  
+    # 3. Underscore-insensitive matching
+    t1 <- gsub("_", "", t0)
+    mod_vars_no_underscore <- gsub("_", "", names(mod_labels))
+    match_index <- match(t1, mod_vars_no_underscore)
+  
+    if (!is.na(match_index)) {
+      original_var_name <- names(mod_labels)[match_index]
+      return(mod_labels[[original_var_name]])
+    }
+  
+    # 4. Default fallback
+    return(term)
+  }
+
+
+  clean_sigma_name <- function(term) { # Function to clean and label sigma terms
+    t <- term
+    t <- gsub("`", "", t)
+    
+    if (t == "sigma") return("Residual SD") # Label for overall residual standard deviation
+    
+    if (grepl("^sigma_", t)) { # Label for group-specific residual SD
+      var_name <- sub("^sigma_", "", t)
+      pretty_label <- pretty_from_mod(var_name)
+      return(paste0("Residual SD: ", pretty_label))
+    }
+    
+    if (grepl("^sd_", t)) { # Label for random effects standard deviations
+      t1 <- sub("^sd_", "", t)
+      parts <- strsplit(t1, "__")[[1]]
+      if (length(parts) == 2) {
+        pretty_param <- pretty_from_mod(parts[2])
+        return(paste0("SD(", parts[1], ": ", pretty_param, ")"))
+      }
+    }
+    
+    return(term) # Return original term if no cleaning applied
+  }
+  
+  if ("fixed" %in% include) { # Process fixed effects
+    fx <- as.data.frame(s$fixed)
+    fx$term <- rownames(fx)
+    fx <- fx %>%
+      dplyr::filter(!grepl("Intercept", term, ignore.case = TRUE)) # Exclude Intercept
+    parts$fixed <- fx %>% dplyr::select(term, Estimate, Est.Error, Rhat, Bulk_ESS, Tail_ESS) # Select diagnostic columns
+  }
+  
+  if ("sigma" %in% include && !is.null(s$spec_pars)) { # Process special parameters (sigma/SD)
+    sg <- as.data.frame(s$spec_pars)
+    sg$term <- rownames(sg)
+    
+    sg <- sg %>%
+      dplyr::filter(!grepl("Intercept", term, ignore.case = TRUE)) %>%  # Exclude Intercept
+      dplyr::mutate(term = purrr::map_chr(term, clean_sigma_name))      # Apply cleaning and labeling
+    
+    parts$sigma <- sg %>% dplyr::select(term, Estimate, Est.Error, Rhat, Bulk_ESS, Tail_ESS) # Select diagnostic columns
+  }
+  
+  tab <- dplyr::bind_rows(parts, .id = "component") # Combine fixed and sigma parts, adding a component ID
+  
+  tab <- tab %>%
+    dplyr::mutate(
+      Predictor = ifelse(
+        component == "fixed",
+        purrr::map_chr(term, pretty_from_mod), # Get pretty labels for fixed effects
+        term # Keep cleaned sigma labels
+      )
+    ) %>%
+    dplyr::select(component, Predictor, Estimate, Est.Error, Rhat, Bulk_ESS, Tail_ESS) # Select final columns
+  
+  gt::gt(tab, rowname_col = "Predictor", groupname_col = "component") %>% # Initialize gt table with grouping
+    gt::tab_header(
+      title = paste0(title,
+                     if (!is.null(model_name)) paste0(" — ", model_name) else "",
+                     if (!is.null(trajectory_name)) paste0(" (", trajectory_name, ")") else ""
+      ),
+      subtitle = subtitle
+    ) %>% # Add title and subtitle
+    gt::fmt_number( # Format numeric columns
+      columns = c(Estimate, Est.Error, Rhat, Bulk_ESS, Tail_ESS),
+      decimals = 3
+    ) %>%
+    gt::cols_label( # Apply column labels
+      Estimate  = "Estimate",
+      Est.Error = "Std. Error",
+      Rhat      = "Rhat",
+      Bulk_ESS  = "Bulk ESS",
+      Tail_ESS  = "Tail ESS"
+    ) %>%
+    gt::opt_row_striping() %>% # Add row striping
+    gt::tab_style( # Style column headers
+      style     = gt::cell_text(weight = "bold"),
+      locations = gt::cells_column_labels()
+    ) %>%
+    gt::tab_options( # Set table options
+      table.font.size  = 12,
+      table.font.names = "Times New Roman"
+    )
+}
+
+# Model Comparison Function
+loo_gt_table <- function(
+  model_list,
+  model_names = NULL,
+  response = NULL,
+  table_title = "Model Comparison (LOO-CV)",
+  add_weights = TRUE,              # compute stacking / Pseudo-BMA weights
+  weight_method = c("stacking", "pseudobma")
+) {
+  
+  weight_method <- match.arg(weight_method)
+
+  # Model names
+  if (is.null(model_names)) {
+    model_names <- paste0("Model ", seq_along(model_list))
+  }
+  stopifnot(length(model_names) == length(model_list))
+
+  # Compute LOO for each model
+  loo_list <- lapply(
+    model_list,
+    function(m) {
+      if (!is.null(response)) loo(log_lik(m, resp = response))
+      else loo(log_lik(m))
+    }
+  )
+
+  # Compare LOO models
+  loo_comp <- do.call(loo_compare, loo_list)
+
+  # Prepare the df
+  df <- loo_comp %>%
+    as.data.frame() %>%
+    rownames_to_column("ModelIndex") %>%
+    mutate(Model = model_names) %>%
+    rename(
+      # Only columns present in loo_compare:
+      ELPD_diff = elpd_diff,
+      SE = se_diff
+    ) %>%
+    mutate(
+      ELPD_diff = round(ELPD_diff, 3),
+      SE = round(SE, 3)
+    ) %>%
+    select(Model, ELPD_diff, SE)
+
+  # Add model weights 
+  if (add_weights) {
+    if (weight_method == "stacking") {
+      w <- loo_model_weights(loo_list, method = "stacking")
+    } else if (weight_method == "pseudobma") {
+      w <- loo_model_weights(loo_list, method = "pseudobma")
+    }
+
+    df$Weight <- round(as.numeric(w), 3)
+  }
+
+  # Build gt table 
+  gt_tbl <- df %>%
+    gt() %>%
+    tab_header(
+      title = md(paste0("**", table_title, "**")),
+      subtitle =
+        "Higher ELPD indicates better out-of-sample predictive performance (with model averaging weights)"
+    ) %>%
+    cols_label(
+      Model = "Model",
+      ELPD_diff = "Δ ELPD (relative to best model)",
+      SE = "SE(Δ)",
+      Weight = "Model Weight"
+    ) %>%
+    fmt_number(
+      columns = c(ELPD_diff, SE, dplyr::any_of("Weight")),
+      decimals = 3
+    ) %>%
+    # Highlight best model: highest ELPD (i.e., Δ = 0)
+    tab_style(
+      style = list(
+        cell_fill(color = "#f0f0f0"),
+        cell_text(weight = "bold")
+      ),
+      locations = cells_body(rows = ELPD_diff == 0)
+    ) %>%
+    opt_row_striping() %>%
+    opt_table_outline() %>%
+    tab_options(
+      table.font.size = 14,
+      data_row.padding = px(6),
+      heading.background.color = "#e8e8ef"
+    )
+
+  return(gt_tbl)
+}
+```
+
+## 🚀 Low Symptom Trajectory
+
+### Data Preparation and Correlation of Continuous Variables
+
+Before fitting the multivariate models, data are prepared for Bayesian estimation through standardising continuous moderators and recoding categorical variables, ensuring stable estimation and interpretable coefficients.
+A correlation matrix for the Low trajectory is used to detect highly collinear variables, with those exceeding a .95 correlation being excluded from analyses.
+
+```{r BRMS-correlations-low, results='asis', message=FALSE}
+# Prepare the data (cleaning, standardizing, recoding)
+df_Low_clean <- prepare_data_brms(df_Low, exclude = "TP1_TPX")
+
+# Determine Collinearity
+correlations_Low <- generate_correlation_gt(df = df_Low_clean, trajectory = "Low")
+correlations_Low
+
+exclude_vars_Low <- correlations_Low$exclude_vars
+```
+
+### Model Fits and Diagnostics
+
+The analysis of the Low Trajectory multivariate models distils posterior distributions by reporting each predictor’s median effect size and 95% credible interval, highlighting predictors whose intervals do not include zero. Displaying the three models together shows how effects change as additional predictors are introduced. Model diagnostics, including R-hat and effective sample sizes, confirm good convergence and lend confidence to the reliability of the posterior estimates and resulting inferences.
+
+```{r BRMS-fitting-low, results='asis', message=FALSE}
+# Fit Models for Low Trajectory
+models_Low <- fit_brms_trajectory_models(
+  df               = df_Low_clean,
+  success_col_name = "Low_n",
+  cont_vars        = cont_vars,
+  cat_vars         = cat_vars,
+  mod_specs        = MOD_SPECS,
+  background_vars  = background_vars,
+  trauma_vars      = trauma_vars,
+  method_vars      = method_vars,
+  brms_args        = brms_args,
+  exclude_vars     = exclude_vars_Low
+)
+
+# Produce predictor summary table
+table_low <- generate_predictor_table_gt(
+  fitted_models = models_Low,
+  trajectory_name = "Low"
+)
+table_low
+
+# Diagnostics for each submodel
+diag_low_m1 <- diagnostic_gt_brms(model = models_Low$model_1_bg,
+                   model_name = "M1: Background",
+                   trajectory_name = "Low")
+
+diag_low_m2 <- diagnostic_gt_brms(model = models_Low$model_2_bg_trauma,
+                   model_name = "M2: Background + Trauma",
+                   trajectory_name = "Low")
+
+diag_low_m3 <- diagnostic_gt_brms(model = models_Low$model_3_full,
+                   model_name = "M3: Background + Trauma + Methodological",
+                   trajectory_name = "Low")
+
+diag_low_m1
+diag_low_m2
+diag_low_m3
+```
+
+### Model Comparison
+
+We compare the multivariate models of the Low trajectory using leave-one-out cross-validation (LOO-CV) to evaluate whether additional moderator domains improve predictive accuracy, ranking models by ELPD (with higher values indicating better performance), interpreting ΔELPD and its SE to gauge relative fit, and using optional model weights to summarize each model’s likelihood of generalizing well to new data.
+
+```{r BRMS-model-comparison-low, results='asis', message=FALSE}
+# Compare models using LOO-CV
+gt_results_Low <- loo_gt_table(
+  model_list = list(
+    models_Low$model_1_bg,
+    models_Low$model_2_bg_trauma,
+    models_Low$model_3_full
+  ),
+  model_names = c( "M1 (Background)", "M2 (Background + Trauma)", "M3 (Background + Trauma + Methodological)"),
+  response = "Lown"
+)
+
+gt_results_Low
+```
+
+## 🌿 Decreasing Symptom Trajectory
+
+### Data Preparation and Correlation of Continuous Variables
+
+Before fitting the multivariate models, data are prepared for Bayesian estimation through standardising continuous moderators and recoding categorical variables, ensuring stable estimation and interpretable coefficients.
+A correlation matrix for the Decreasing trajectory is used to detect highly collinear variables, with those exceeding a .95 correlation being excluded from analyses.
+
+```{r BRMS-correlations-Decreasing, results='asis', message=FALSE}
+# Prepare the data (cleaning, standardizing, recoding)
+df_Decreasing_clean <- prepare_data_brms(df_Decreasing, exclude = "TP1_TPX")
+
+# Determine Collinearity
+correlations_Decreasing <- generate_correlation_gt(df = df_Decreasing_clean, trajectory = "Decreasing")
+correlations_Decreasing
+
+exclude_vars_Decreasing <- correlations_Decreasing$exclude_vars
+```
+
+### Model Fits and Diagnostics
+
+The analysis of the Decreasing Trajectory multivariate models distils posterior distributions by reporting each predictor’s median effect size and 95% credible interval, highlighting predictors whose intervals do not include zero. Displaying the three models together shows how effects change as additional predictors are introduced. Model diagnostics, including R-hat and effective sample sizes, confirm good convergence and lend confidence to the reliability of the posterior estimates and resulting inferences.
+
+```{r BRMS-fitting-Decreasing, results='asis', message=FALSE}
+# Fit Models for Decreasing Trajectory
+models_Decreasing <- fit_brms_trajectory_models(
+  df               = df_Decreasing_clean,
+  success_col_name = "Decreasing_n",
+  cont_vars        = cont_vars,
+  cat_vars         = cat_vars,
+  mod_specs        = MOD_SPECS,
+  background_vars  = background_vars,
+  trauma_vars      = trauma_vars,
+  method_vars      = method_vars,
+  brms_args        = brms_args,
+  exclude_vars     = exclude_vars_Decreasing
+)
+
+# Produce predictor summary table
+table_Decreasing <- generate_predictor_table_gt(
+  fitted_models = models_Decreasing,
+  trajectory_name = "Decreasing"
+)
+table_Decreasing
+
+# Diagnostics for each submodel
+diag_Decreasing_m1 <- diagnostic_gt_brms(model = models_Decreasing$model_1_bg,
+                                  model_name = "M1: Background",
+                                  trajectory_name = "Decreasing")
+
+diag_Decreasing_m2 <- diagnostic_gt_brms(model = models_Decreasing$model_2_bg_trauma,
+                                  model_name = "M2: Background + Trauma",
+                                  trajectory_name = "Decreasing")
+
+diag_Decreasing_m3 <- diagnostic_gt_brms(model = models_Decreasing$model_3_full,
+                                  model_name = "M3: Background + Trauma + Methodological",
+                                  trajectory_name = "Decreasing")
+
+diag_Decreasing_m1
+diag_Decreasing_m2
+diag_Decreasing_m3
+```
+
+### Model Comparison
+
+We compare the multivariate models of the Decreasing trajectory using leave-one-out cross-validation (LOO-CV) to evaluate whether additional moderator domains improve predictive accuracy, ranking models by ELPD (with higher values indicating better performance), interpreting ΔELPD and its SE to gauge relative fit, and using optional model weights to summarize each model’s likelihood of generalizing well to new data.
+
+```{r BRMS-model-comparison-Decreasing, results='asis', message=FALSE}
+# Compare models using LOO-CV
+gt_results_Decreasing <- loo_gt_table(
+  model_list = list(
+    models_Decreasing$model_1_bg,
+    models_Decreasing$model_2_bg_trauma,
+    models_Decreasing$model_3_full
+  ),
+  model_names = c( "M1 (Background)", "M2 (Background + Trauma)", "M3 (Background + Trauma + Methodological)"),
+  response = "Decreasingn"
+)
+
+gt_results_Decreasing
+```
+
+## ⚠️ Increasing Symptom Trajectory
+
+### Data Preparation and Correlation of Continuous Variables
+
+Before fitting the multivariate models, data are prepared for Bayesian estimation through standardising continuous moderators and recoding categorical variables, ensuring stable estimation and interpretable coefficients.
+A correlation matrix for the Increasing trajectory is used to detect highly collinear variables, with those exceeding a .95 correlation being excluded from analyses.
+
+```{r BRMS-correlations-Increasing, results='asis', message=FALSE}
+# Prepare the data (cleaning, standardizing, recoding)
+df_Increasing_clean <- prepare_data_brms(df_Increasing, exclude = "TP1_TPX")
+
+# Determine Collinearity
+correlations_Increasing <- generate_correlation_gt(df = df_Increasing_clean, trajectory = "Increasing")
+correlations_Increasing
+
+exclude_vars_Increasing <- correlations_Increasing$exclude_vars
+```
+
+### Model Fits
+
+The analysis of the Increasing Trajectory multivariate models distils posterior distributions by reporting each predictor’s median effect size and 95% credible interval, highlighting predictors whose intervals do not include zero. Displaying the three models together shows how effects change as additional predictors are introduced. Model diagnostics, including R-hat and effective sample sizes, confirm good convergence and lend confidence to the reliability of the posterior estimates and resulting inferences.
+
+```{r BRMS-fitting-Increasing, results='asis', message=FALSE}
+# Fit Models for Increasing Trajectory
+models_Increasing <- fit_brms_trajectory_models(
+  df               = df_Increasing_clean,
+  success_col_name = "Increasing_n",
+  cont_vars        = cont_vars,
+  cat_vars         = cat_vars,
+  mod_specs        = MOD_SPECS,
+  background_vars  = background_vars,
+  trauma_vars      = trauma_vars,
+  method_vars      = method_vars,
+  brms_args        = brms_args,
+  exclude_vars     = exclude_vars_Increasing
+)
+
+# Produce predictor summary table
+table_Increasing <- generate_predictor_table_gt(
+  fitted_models = models_Increasing,
+  trajectory_name = "Increasing"
+)
+table_Increasing
+
+# Diagnostics for each submodel
+diag_Increasing_m1 <- diagnostic_gt_brms(model = models_Increasing$model_1_bg,
+                                  model_name = "M1: Background",
+                                  trajectory_name = "Increasing")
+
+diag_Increasing_m2 <- diagnostic_gt_brms(model = models_Increasing$model_2_bg_trauma,
+                                  model_name = "M2: Background + Trauma",
+                                  trajectory_name = "Increasing")
+
+diag_Increasing_m3 <- diagnostic_gt_brms(model = models_Increasing$model_3_full,
+                                  model_name = "M3: Background + Trauma + Methodological",
+                                  trajectory_name = "Increasing")
+
+diag_Increasing_m1
+diag_Increasing_m2
+diag_Increasing_m3
+```
+
+### Model Comparison
+
+We compare the multivariate models of the Increasing trajectory using leave-one-out cross-validation (LOO-CV) to evaluate whether additional moderator domains improve predictive accuracy, ranking models by ELPD (with higher values indicating better performance), interpreting ΔELPD and its SE to gauge relative fit, and using optional model weights to summarize each model’s likelihood of generalizing well to new data.
+
+```{r BRMS-model-comparison-Increasing, results='asis', message=FALSE}
+# Compare models using LOO-CV
+gt_results_Increasing <- loo_gt_table(
+  model_list = list(
+    models_Increasing$model_1_bg,
+    models_Increasing$model_2_bg_trauma,
+    models_Increasing$model_3_full
+  ),
+  model_names = c( "M1 (Background)", "M2 (Background + Trauma)", "M3 (Background + Trauma + Methodological)"),
+  response = "Increasingn"
+)
+
+gt_results_Increasing
+```
+
+## 🩸 High Symptom Trajectory
+
+### Data Preparation and Correlation of Continuous Variables
+
+Before fitting the multivariate models, data are prepared for Bayesian estimation through standardising continuous moderators and recoding categorical variables, ensuring stable estimation and interpretable coefficients.
+A correlation matrix for the High trajectory is used to detect highly collinear variables, with those exceeding a .95 correlation being excluded from analyses.
+
+```{r BRMS-correlations-High, results='asis', message=FALSE}
+# Prepare the data (cleaning, standardizing, recoding)
+df_High_clean <- prepare_data_brms(df_High, exclude = "TP1_TPX")
+
+# Determine Collinearity
+correlations_High <- generate_correlation_gt(df = df_High_clean, trajectory = "High")
+correlations_High
+
+exclude_vars_High <- correlations_High$exclude_vars
+```
+
+### Model Fits
+
+The analysis of the High Trajectory multivariate models distils posterior distributions by reporting each predictor’s median effect size and 95% credible interval, highlighting predictors whose intervals do not include zero. Displaying the three models together shows how effects change as additional predictors are introduced. Model diagnostics, including R-hat and effective sample sizes, confirm good convergence and lend confidence to the reliability of the posterior estimates and resulting inferences.
+
+```{r BRMS-fitting-High, results='asis', message=FALSE}
+# Fit Models for High Trajectory
+models_High <- fit_brms_trajectory_models(
+  df               = df_High_clean,
+  success_col_name = "High_n",
+  cont_vars        = cont_vars,
+  cat_vars         = cat_vars,
+  mod_specs        = MOD_SPECS,
+  background_vars  = background_vars,
+  trauma_vars      = trauma_vars,
+  method_vars      = method_vars,
+  brms_args        = brms_args,
+  exclude_vars     = exclude_vars_High
+)
+
+# Produce predictor summary table
+table_High <- generate_predictor_table_gt(
+  fitted_models = models_High,
+  trajectory_name = "High"
+)
+table_High
+
+# Diagnostics for each submodel
+diag_High_m1 <- diagnostic_gt_brms(model = models_High$model_1_bg,
+                                  model_name = "M1: Background",
+                                  trajectory_name = "High")
+
+diag_High_m2 <- diagnostic_gt_brms(model = models_High$model_2_bg_trauma,
+                                  model_name = "M2: Background + Trauma",
+                                  trajectory_name = "High")
+
+diag_High_m3 <- diagnostic_gt_brms(model = models_High$model_3_full,
+                                  model_name = "M3: Background + Trauma + Methodological",
+                                  trajectory_name = "High")
+
+diag_High_m1
+diag_High_m2
+diag_High_m3
+```
+
+### Model Comparison
+
+We compare the multivariate models of the High trajectory using leave-one-out cross-validation (LOO-CV) to evaluate whether additional moderator domains improve predictive accuracy, ranking models by ELPD (with higher values indicating better performance), interpreting ΔELPD and its SE to gauge relative fit, and using optional model weights to summarize each model’s likelihood of generalizing well to new data.
+
+```{r BRMS-model-comparison-High, results='asis', message=FALSE}
+# Compare models using LOO-CV
+gt_results_High <- loo_gt_table(
+  model_list = list(
+    models_High$model_1_bg,
+    models_High$model_2_bg_trauma,
+    models_High$model_3_full
+  ),
+  model_names = c( "M1 (Background)", "M2 (Background + Trauma)", "M3 (Background + Trauma + Methodological)"),
+  response = "Highn"
+)
+
+gt_results_High
+```
+
+## 🌗 Moderate Symptom Trajectory
+
+### Data Preparation and Correlation of Continuous Variables
+
+Before fitting the multivariate models, data are prepared for Bayesian estimation through standardising continuous moderators and recoding categorical variables, ensuring stable estimation and interpretable coefficients.
+A correlation matrix for the Moderate trajectory is used to detect highly collinear variables, with those exceeding a .95 correlation being excluded from analyses.
+
+```{r BRMS-correlations-Moderate, results='asis', message=FALSE}
+# Prepare the data (cleaning, standardizing, recoding)
+df_Moderate_clean <- prepare_data_brms(df_Moderate, exclude = "TP1_TPX")
+
+# Determine Collinearity
+correlations_Moderate <- generate_correlation_gt(df = df_Moderate_clean, trajectory = "Moderate")
+correlations_Moderate
+
+exclude_vars_Moderate <- correlations_Moderate$exclude_vars
+```
+
+### Model Fits
+
+The analysis of the Moderate Trajectory multivariate models distils posterior distributions by reporting each predictor’s median effect size and 95% credible interval, highlighting predictors whose intervals do not include zero. Displaying the three models together shows how effects change as additional predictors are introduced. Model diagnostics, including R-hat and effective sample sizes, confirm good convergence and lend confidence to the reliability of the posterior estimates and resulting inferences.
+
+```{r BRMS-fitting-Moderate, results='asis', message=FALSE}
+# Fit Models for Moderate Trajectory
+models_Moderate <- fit_brms_trajectory_models(
+  df               = df_Moderate_clean,
+  success_col_name = "Moderate_n",
+  cont_vars        = cont_vars,
+  cat_vars         = cat_vars,
+  mod_specs        = MOD_SPECS,
+  background_vars  = background_vars,
+  trauma_vars      = trauma_vars,
+  method_vars      = method_vars,
+  brms_args        = brms_args,
+  exclude_vars     = exclude_vars_Moderate
+)
+
+# Produce predictor summary table
+table_Moderate <- generate_predictor_table_gt(
+  fitted_models = models_Moderate,
+  trajectory_name = "Moderate"
+)
+table_Moderate
+
+# Diagnostics for each submodel
+diag_Moderate_m1 <- diagnostic_gt_brms(model = models_Moderate$model_1_bg,
+                                  model_name = "M1: Background",
+                                  trajectory_name = "Moderate")
+
+diag_Moderate_m2 <- diagnostic_gt_brms(model = models_Moderate$model_2_bg_trauma,
+                                  model_name = "M2: Background + Trauma",
+                                  trajectory_name = "Moderate")
+
+diag_Moderate_m3 <- diagnostic_gt_brms(model = models_Moderate$model_3_full,
+                                  model_name = "M3: Background + Trauma + Methodological",
+                                  trajectory_name = "Moderate")
+
+diag_Moderate_m1
+diag_Moderate_m2
+diag_Moderate_m3
+```
+
+### Model Comparison
+
+We compare the multivariate models of the Moderate trajectory using leave-one-out cross-validation (LOO-CV) to evaluate whether additional moderator domains improve predictive accuracy, ranking models by ELPD (with higher values indicating better performance), interpreting ΔELPD and its SE to gauge relative fit, and using optional model weights to summarize each model’s likelihood of generalizing well to new data.
+
+```{r BRMS-model-comparison-Moderate, results='asis', message=FALSE}
+# Compare models using LOO-CV
+gt_results_Moderate <- loo_gt_table(
+  model_list = list(
+    models_Moderate$model_1_bg,
+    models_Moderate$model_2_bg_trauma,
+    models_Moderate$model_3_full
+  ),
+  model_names = c( "M1 (Background)", "M2 (Background + Trauma)", "M3 (Background + Trauma + Methodological)"),
+  response = "Moderaten"
+)
+
+gt_results_Moderate
+```
+
+# Tables for Paper
+
+## Multivariate Models Summary Table
+
+Below is a full summary of the multivariate models of all trajectories. 
+
+```{r brms-full-summary-table}
+# order predictors
+predictor_order_master <- c(background_vars, trauma_vars, method_vars)
+
+generate_predictor_table_df <- function(fitted_models,
+                                        success_col_name,
+                                        trajectory_name,
+                                        mod_specs = MOD_SPECS) {
+
+  var_names  <- purrr::map_chr(mod_specs, "var")
+  var_labels <- purrr::map_chr(mod_specs, "label") |> stats::setNames(var_names)
+
+  find_base_var <- function(t0) {
+    hits <- var_names[order(nchar(var_names), decreasing = TRUE)]
+    hit  <- purrr::keep(hits, ~ grepl(.x, t0))
+    if (length(hit) == 0) t0 else hit[[1]]
+  }
+
+  all_coefs <- purrr::map_dfr(names(fitted_models), function(m) {
+    cf <- try(brms::fixef(fitted_models[[m]], summary = TRUE), silent = TRUE)
+    if (inherits(cf, "try-error") || length(cf) == 0) return(NULL)
+
+    as.data.frame(cf) %>%
+      tibble::rownames_to_column("Term") %>%
+      dplyr::rename(Median = Estimate, CI_Lower = Q2.5, CI_Upper = Q97.5) %>%
+      dplyr::mutate(Model = m)
+  })
+
+  all_coefs %>%
+    dplyr::filter(!grepl("Intercept", Term)) %>%
+    dplyr::mutate(
+      Term = gsub("^Lown_|^Decreasingn_|^Increasingn_|^Highn_|^Moderaten_", "", Term),
+      Term = sub("^mi_", "", Term),
+      Term = sub("^mi", "", Term)
+    ) %>%
+    dplyr::rowwise() %>%
+    dplyr::mutate(
+      BaseVar  = find_base_var(Term),
+      Level    = trimws(sub(paste0("^", BaseVar), "", Term)),
+      VarLabel = dplyr::coalesce(var_labels[BaseVar], BaseVar),
+      Predictor = VarLabel
+    ) %>%
+    dplyr::ungroup() %>%
+    dplyr::mutate(
+      Effect = sprintf("%.2f [%.2f, %.2f]", Median, CI_Lower, CI_Upper),
+      Important = ifelse(CI_Lower > 0 | CI_Upper < 0, "Yes", "No"),
+      Model = dplyr::recode(
+        Model,
+        "model_1_bg"        = "M1 (Background)",
+        "model_2_bg_trauma" = "M2 (Background + Trauma)",
+        "model_3_full"      = "M3 (Background + Trauma + Methodological)"
+      ),
+      Trajectory = trajectory_name
+    ) %>%
+    dplyr::select(Predictor, Trajectory, Model, Effect, Important)
+}
+
+# apply function to all trajectories
+df_low <- generate_predictor_table_df(
+  models_Low, "Low_n", "Low"
+)
+
+df_decreasing <- generate_predictor_table_df(
+  models_Decreasing, "Decreasing_n", "Decreasing"
+)
+
+df_increasing <- generate_predictor_table_df(
+  models_Increasing, "Increasing_n", "Increasing"
+)
+
+df_high <- generate_predictor_table_df(
+  models_High, "High_n", "High"
+)
+
+df_moderate <- generate_predictor_table_df(
+  models_Moderate, "Moderate_n", "Moderate"
+)
+
+df_all_traj <- dplyr::bind_rows(
+  df_low,
+  df_decreasing,
+  df_increasing,
+  df_high,
+  df_moderate
+) %>%
+  dplyr::mutate(
+    Trajectory = factor(
+      Trajectory,
+      levels = c("Low", "Decreasing", "Increasing", "High", "Moderate")
+    )
+  )
+
+df_big_wide <- df_all_traj %>%
+  select(Predictor, Trajectory, Model, Effect, Important) %>%
+  tidyr::pivot_wider(
+    names_from  = Model,
+    values_from = c(Effect, Important),
+    names_glue  = "{.value}_{Model}"
+  ) %>%
+  arrange(
+    Trajectory,
+    match(Predictor, predictor_order_master)
+  )
+
+effect_cols     <- grep("^Effect_", names(df_big_wide), value = TRUE)
+importance_cols <- grep("^Important_", names(df_big_wide), value = TRUE)
+
+effect_labels <- stats::setNames(
+  gsub("Effect_", "Effect [95% CI] – ", effect_cols),
+  effect_cols
+)
+
+importance_labels <- stats::setNames(
+  gsub("Important_", "Important? – ", importance_cols),
+  importance_cols
+)
+
+
+big_gt <- df_big_wide %>%
+  gt::gt(
+    rowname_col = "Predictor",
+    groupname_col = "Trajectory"
+  ) %>%
+  gt::tab_header(
+    title    = gt::md("**Predictor Summary Across Trajectories**"),
+    subtitle = "Median, 95% Credible Interval, and Predictor Importance"
+  ) %>%
+  gt::cols_label(
+    !!!effect_labels,
+    !!!importance_labels
+  ) %>%
+  gt::data_color(
+    columns = dplyr::all_of(importance_cols),
+    colors = function(x) {
+      dplyr::case_when(
+        x == "Yes" ~ "#d4edda",
+        x == "No"  ~ "gray",
+        TRUE       ~ "white"
+      )
+    }
+  ) %>%
+  gt::tab_options(
+    table.font.size = 12,
+    data_row.padding = gt::px(3),
+    column_labels.font.weight = "bold",
+    table.font.names = "Times New Roman"
+  ) %>%
+  gt::opt_row_striping() %>%
+  gt::tab_style(
+    style = gt::cell_text(weight = "bold"),
+    locations = gt::cells_row_groups()
+  )
+
+big_gt
 ```
 ---
+
+
+
+
+
+
+
+
+
+
 
 
