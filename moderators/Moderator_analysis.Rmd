@@ -1251,41 +1251,6 @@ Below is a summary of univariate models of all predictor variables for the Low T
 make_group_table(all_Low_res, "Low Symptom Trajectory: All Moderators")
 ```
 
-## ⚠️ Increasing Symptom Trajectory
-
-### Descriptives
-
-We provide additional descriptives based on the Increasing trajectory variable, using the full dataset.
-
-```{r Increasing-descriptives}
-trajectory_descriptives(df_Increasing, "Increasing")
-```
-
-Below, we fit univariate models of predictors for the Increasing Trajectory grouped by conceptual domains: Background, Trauma-related, and Methodological variables.
-For continuous moderators, the model describes how the expected trajectory prevalence changes with a one-unit increase in the predictor. 
-For categorical moderators, it compares the prevalence between the reference category and each alternative category.
-Differences (Marginal Δ) are significant at α = .05. 
-
-```{r Increasing-mods-fitting}
-# Run the three groups for this trajectory
-bg_res_Increasing <- run_group(df_Increasing, success_col = "Increasing_n", denom_col = "Sample_Size", vars = background_vars)
-tr_res_Increasing <- run_group(df_Increasing, success_col = "Increasing_n", denom_col = "Sample_Size", vars = trauma_vars)
-md_res_Increasing <- run_group(df_Increasing, success_col = "Increasing_n", denom_col = "Sample_Size", vars = method_vars)
-all_Increasing_res <- run_group(df_Increasing, success_col = "Increasing_n", denom_col = "Sample_Size", vars = all_substantive_vars)
-```
-
-```{r Increasing-mods-tables}
-make_group_table(bg_res_Increasing, "Increasing Symptom Trajectory: Socio-Demographic Moderators")
-make_group_table(tr_res_Increasing, "Increasing Symptom Trajectory: Trauma-Related Moderators")
-make_group_table(md_res_Increasing, "Increasing Symptom Trajectory: Methodological Moderators")
-```
-
-Below is a summary of univariate models of all predictor variables for the Increasing Trajectory.
-
-```{r Increasing-mods-tables-summary}
-make_group_table(all_Increasing_res, "Increasing Symptom Trajectory: All Moderators")
-```
-
 ## 🌿 Decreasing Symptom Trajectory
 
 ### Descriptives
@@ -1319,6 +1284,41 @@ Below is a summary of univariate models of all predictor variables for the Decre
 
 ```{r Decreasing-mods-tables-summary}
 make_group_table(all_Decreasing_res, "Decreasing Symptom Trajectory: All Moderators")
+```
+
+## ⚠️ Increasing Symptom Trajectory
+
+### Descriptives
+
+We provide additional descriptives based on the Increasing trajectory variable, using the full dataset.
+
+```{r Increasing-descriptives}
+trajectory_descriptives(df_Increasing, "Increasing")
+```
+
+Below, we fit univariate models of predictors for the Increasing Trajectory grouped by conceptual domains: Background, Trauma-related, and Methodological variables.
+For continuous moderators, the model describes how the expected trajectory prevalence changes with a one-unit increase in the predictor. 
+For categorical moderators, it compares the prevalence between the reference category and each alternative category.
+Differences (Marginal Δ) are significant at α = .05. 
+
+```{r Increasing-mods-fitting}
+# Run the three groups for this trajectory
+bg_res_Increasing <- run_group(df_Increasing, success_col = "Increasing_n", denom_col = "Sample_Size", vars = background_vars)
+tr_res_Increasing <- run_group(df_Increasing, success_col = "Increasing_n", denom_col = "Sample_Size", vars = trauma_vars)
+md_res_Increasing <- run_group(df_Increasing, success_col = "Increasing_n", denom_col = "Sample_Size", vars = method_vars)
+all_Increasing_res <- run_group(df_Increasing, success_col = "Increasing_n", denom_col = "Sample_Size", vars = all_substantive_vars)
+```
+
+```{r Increasing-mods-tables}
+make_group_table(bg_res_Increasing, "Increasing Symptom Trajectory: Socio-Demographic Moderators")
+make_group_table(tr_res_Increasing, "Increasing Symptom Trajectory: Trauma-Related Moderators")
+make_group_table(md_res_Increasing, "Increasing Symptom Trajectory: Methodological Moderators")
+```
+
+Below is a summary of univariate models of all predictor variables for the Increasing Trajectory.
+
+```{r Increasing-mods-tables-summary}
+make_group_table(all_Increasing_res, "Increasing Symptom Trajectory: All Moderators")
 ```
 
 ## 🩸 High Symptom Trajectory
@@ -1544,6 +1544,7 @@ doc <- body_end_section_landscape(doc)
 print(doc, target = "Categorical_Moderator_Table.docx")
 ```
 ---
+
 
 
 
