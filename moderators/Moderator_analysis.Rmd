@@ -1226,22 +1226,31 @@ We provide additional descriptives based on the Low trajectory variable, using t
 trajectory_descriptives(df_Low, "Low")
 ```
 
+Below, we fit univariate models of predictors for the Low Trajectory grouped by conceptual domains: Background, Trauma-related, and Methodological variables.
+For continuous moderators, the model describes how the expected trajectory prevalence changes with a one-unit increase in the predictor. 
+For categorical moderators, it compares the prevalence between the reference category and each alternative category.
+Differences (Marginal Δ) are significant at α = .05. 
+
 ```{r Low-mods-fitting}
 # Run the three groups for this trajectory
 bg_res_Low <- run_group(df_Low, success_col = "Low_n", denom_col = "Sample_Size", vars = background_vars)
 tr_res_Low <- run_group(df_Low, success_col = "Low_n", denom_col = "Sample_Size", vars = trauma_vars)
 md_res_Low <- run_group(df_Low, success_col = "Low_n", denom_col = "Sample_Size", vars = method_vars)
-
-all_vars <- c(background_vars, trauma_vars, method_vars)
-all_Low_res <- run_group(df_Low, success_col = "Low_n", denom_col = "Sample_Size", vars = all_vars)
+all_Low_res <- run_group(df_Low, success_col = "Low_n", denom_col = "Sample_Size", vars = all_substantive_vars)
 ```
 
 ```{r Low-mods-tables}
 make_group_table(bg_res_Low, "Low Symptom Trajectory: Socio-Demographic Moderators")
 make_group_table(tr_res_Low, "Low Symptom Trajectory: Trauma-Related Moderators")
 make_group_table(md_res_Low, "Low Symptom Trajectory: Methodological Moderators")
+```
+
+Below is a summary of univariate models of all predictor variables for the Low Trajectory.
+
+```{r Low-mods-tables-summary}
 make_group_table(all_Low_res, "Low Symptom Trajectory: All Moderators")
 ```
+
 ## ⚠️ Increasing Symptom Trajectory
 
 ### Descriptives
@@ -1252,22 +1261,31 @@ We provide additional descriptives based on the Increasing trajectory variable, 
 trajectory_descriptives(df_Increasing, "Increasing")
 ```
 
+Below, we fit univariate models of predictors for the Increasing Trajectory grouped by conceptual domains: Background, Trauma-related, and Methodological variables.
+For continuous moderators, the model describes how the expected trajectory prevalence changes with a one-unit increase in the predictor. 
+For categorical moderators, it compares the prevalence between the reference category and each alternative category.
+Differences (Marginal Δ) are significant at α = .05. 
+
 ```{r Increasing-mods-fitting}
 # Run the three groups for this trajectory
 bg_res_Increasing <- run_group(df_Increasing, success_col = "Increasing_n", denom_col = "Sample_Size", vars = background_vars)
 tr_res_Increasing <- run_group(df_Increasing, success_col = "Increasing_n", denom_col = "Sample_Size", vars = trauma_vars)
 md_res_Increasing <- run_group(df_Increasing, success_col = "Increasing_n", denom_col = "Sample_Size", vars = method_vars)
-
-all_vars <- c(background_vars, trauma_vars, method_vars)
-all_Increasing_res <- run_group(df_Increasing, success_col = "Increasing_n", denom_col = "Sample_Size", vars = all_vars)
+all_Increasing_res <- run_group(df_Increasing, success_col = "Increasing_n", denom_col = "Sample_Size", vars = all_substantive_vars)
 ```
 
 ```{r Increasing-mods-tables}
 make_group_table(bg_res_Increasing, "Increasing Symptom Trajectory: Socio-Demographic Moderators")
 make_group_table(tr_res_Increasing, "Increasing Symptom Trajectory: Trauma-Related Moderators")
 make_group_table(md_res_Increasing, "Increasing Symptom Trajectory: Methodological Moderators")
+```
+
+Below is a summary of univariate models of all predictor variables for the Increasing Trajectory.
+
+```{r Increasing-mods-tables-summary}
 make_group_table(all_Increasing_res, "Increasing Symptom Trajectory: All Moderators")
 ```
+
 ## 🌿 Decreasing Symptom Trajectory
 
 ### Descriptives
@@ -1278,22 +1296,31 @@ We provide additional descriptives based on the Decreasing trajectory variable, 
 trajectory_descriptives(df_Decreasing, "Decreasing")
 ```
 
+Below, we fit univariate models of predictors for the Decreasing Trajectory grouped by conceptual domains: Background, Trauma-related, and Methodological variables.
+For continuous moderators, the model describes how the expected trajectory prevalence changes with a one-unit increase in the predictor. 
+For categorical moderators, it compares the prevalence between the reference category and each alternative category.
+Differences (Marginal Δ) are significant at α = .05. 
+
 ```{r Decreasing-mods-fitting}
 # Run the three groups for this trajectory
 bg_res_Decreasing <- run_group(df_Decreasing, success_col = "Decreasing_n", denom_col = "Sample_Size", vars = background_vars)
 tr_res_Decreasing <- run_group(df_Decreasing, success_col = "Decreasing_n", denom_col = "Sample_Size", vars = trauma_vars)
 md_res_Decreasing <- run_group(df_Decreasing, success_col = "Decreasing_n", denom_col = "Sample_Size", vars = method_vars)
-
-all_vars <- c(background_vars, trauma_vars, method_vars)
-all_Decreasing_res <- run_group(df_Decreasing, success_col = "Decreasing_n", denom_col = "Sample_Size", vars = all_vars)
+all_Decreasing_res <- run_group(df_Decreasing, success_col = "Decreasing_n", denom_col = "Sample_Size", vars = all_substantive_vars)
 ```
 
 ```{r Decreasing-mods-tables}
 make_group_table(bg_res_Decreasing, "Decreasing Symptom Trajectory: Socio-Demographic Moderators")
 make_group_table(tr_res_Decreasing, "Decreasing Symptom Trajectory: Trauma-Related Moderators")
 make_group_table(md_res_Decreasing, "Decreasing Symptom Trajectory: Methodological Moderators")
+```
+
+Below is a summary of univariate models of all predictor variables for the Decreasing Trajectory.
+
+```{r Decreasing-mods-tables-summary}
 make_group_table(all_Decreasing_res, "Decreasing Symptom Trajectory: All Moderators")
 ```
+
 ## 🩸 High Symptom Trajectory
 
 ### Descriptives
@@ -1304,20 +1331,28 @@ We provide additional descriptives based on the High trajectory variable, using 
 trajectory_descriptives(df_High, "High")
 ```
 
+Below, we fit univariate models of predictors for the High Trajectory grouped by conceptual domains: Background, Trauma-related, and Methodological variables.
+For continuous moderators, the model describes how the expected trajectory prevalence changes with a one-unit increase in the predictor. 
+For categorical moderators, it compares the prevalence between the reference category and each alternative category.
+Differences (Marginal Δ) are significant at α = .05. 
+
 ```{r High-mods-fitting}
 # Run the three groups for this trajectory
 bg_res_High <- run_group(df_High, success_col = "High_n", denom_col = "Sample_Size", vars = background_vars)
 tr_res_High <- run_group(df_High, success_col = "High_n", denom_col = "Sample_Size", vars = trauma_vars)
 md_res_High <- run_group(df_High, success_col = "High_n", denom_col = "Sample_Size", vars = method_vars)
-
-all_vars <- c(background_vars, trauma_vars, method_vars)
-all_High_res <- run_group(df_High, success_col = "High_n", denom_col = "Sample_Size", vars = all_vars)
+all_High_res <- run_group(df_High, success_col = "High_n", denom_col = "Sample_Size", vars = all_substantive_vars)
 ```
 
 ```{r High-mods-tables}
 make_group_table(bg_res_High, "High Symptom Trajectory: Socio-Demographic Moderators")
 make_group_table(tr_res_High, "High Symptom Trajectory: Trauma-Related Moderators")
 make_group_table(md_res_High, "High Symptom Trajectory: Methodological Moderators")
+```
+
+Below is a summary of univariate models of all predictor variables for the High Trajectory.
+
+```{r High-mods-tables-summary}
 make_group_table(all_High_res, "High Symptom Trajectory: All Moderators")
 ```
 
@@ -1331,20 +1366,28 @@ We provide additional descriptives based on the Moderate trajectory variable, us
 trajectory_descriptives(df_Moderate, "Moderate")
 ```
 
+Below, we fit univariate models of predictors for the Moderate Trajectory grouped by conceptual domains: Background, Trauma-related, and Methodological variables.
+For continuous moderators, the model describes how the expected trajectory prevalence changes with a one-unit increase in the predictor. 
+For categorical moderators, it compares the prevalence between the reference category and each alternative category.
+Differences (Marginal Δ) are significant at α = .05. 
+
 ```{r Moderate-mods-fitting}
 # Run the three groups for this trajectory
 bg_res_Moderate <- run_group(df_Moderate, success_col = "Moderate_n", denom_col = "Sample_Size", vars = background_vars)
 tr_res_Moderate <- run_group(df_Moderate, success_col = "Moderate_n", denom_col = "Sample_Size", vars = trauma_vars)
 md_res_Moderate <- run_group(df_Moderate, success_col = "Moderate_n", denom_col = "Sample_Size", vars = method_vars)
-
-all_vars <- c(background_vars, trauma_vars, method_vars)
-all_Moderate_res <- run_group(df_Moderate, success_col = "Moderate_n", denom_col = "Sample_Size", vars = all_vars)
+all_Moderate_res <- run_group(df_Moderate, success_col = "Moderate_n", denom_col = "Sample_Size", vars = all_substantive_vars)
 ```
 
 ```{r Moderate-mods-tables}
 make_group_table(bg_res_Moderate, "Moderate Symptom Trajectory: Socio-Demographic Moderators")
 make_group_table(tr_res_Moderate, "Moderate Symptom Trajectory: Trauma-Related Moderators")
 make_group_table(md_res_Moderate, "Moderate Symptom Trajectory: Methodological Moderators")
+```
+
+Below is a summary of univariate models of all predictor variables for the Moderate Trajectory.
+
+```{r Moderate-mods-tables-summary}
 make_group_table(all_Moderate_res, "Moderate Symptom Trajectory: All Moderators")
 ```
 
@@ -1501,6 +1544,7 @@ doc <- body_end_section_landscape(doc)
 print(doc, target = "Categorical_Moderator_Table.docx")
 ```
 ---
+
 
 
 
