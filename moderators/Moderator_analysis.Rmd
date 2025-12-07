@@ -1258,6 +1258,128 @@ Continuous predictors are standardised to place effects on a comparable scale, a
 
 For each trajectory (Low, Decreasing, Increasing, High, and Moderate), three nested models are estimated: a background-only model, a model adding trauma-related moderators, and a full model including methodological variables. This hierarchical structure allows us to evaluate whether additional domains of moderators improve explanatory power beyond basic sample characteristics. Model results are summarised using posterior medians and 95% credible intervals, with convergence diagnostics used to verify estimation quality, and predictive performance compared across models using leave-one-out cross-validation.
 
+## Correlation of Continous Predictors
+
+Since the models incorporate multiple moderators simultaneously, it is important to understand how strongly continuous variables relate to one another. High correlations may signal redundancy or confounding. By computing and visualising the correlation matrix, we obtain an initial sense of the structure among moderators, helping us to anticipate potential collinearity and refine the interpretation of subsequent model coefficients.
+Here, we first provide the correlation matrix of continuous variables of the whole dataset.
+
+```{r correlation-table,  results='asis', message=FALSE}
+# GT Correlation Table for Continuous Predictors
+generate_correlation_gt <- function(df, vars = NULL, trajectory = NULL, show_warnings = TRUE) {
+  
+  # Get continuous variables from MOD_SPECS
+  cont_vars <- MOD_SPECS |> 
+    purrr::keep(~ .x$type == "cont") |> 
+    purrr::map_chr("var")
+  
+  # Keep only variables present in df
+  cont_vars <- intersect(cont_vars, names(df))
+  
+  # Compute correlation matrix
+  cor_mat <- round(
+    cor(df[, cont_vars], use = "pairwise.complete.obs"),
+    2
+  )
+  
+  # Convert to long format
+  cor_df <- cor_mat %>%
+    as.data.frame() %>%
+    tibble::rownames_to_column("Var1") %>%
+    tidyr::pivot_longer(-Var1, names_to = "Var2", values_to = "Correlation")
+  
+  # Initialize exclusions
+  exclude_vars <- character(0)
+  
+  # high correlation check
+  if (show_warnings) {
+    
+    # Filter for high correlations and exclude self-pairs + duplicates
+    high_cor_df <- cor_df %>%
+      dplyr::filter(abs(Correlation) > 0.95 & Var1 != Var2) %>%
+      dplyr::rowwise() %>%
+      dplyr::filter(Var1 < Var2) %>%
+      dplyr::ungroup()
+    
+    # If any high-correlation pairs exist:
+    if (nrow(high_cor_df) > 0) {
+      
+      # Add pretty labels
+      high_cor_df$Pretty1 <- MOD_LABELS[high_cor_df$Var1]
+      high_cor_df$Pretty2 <- MOD_LABELS[high_cor_df$Var2]
+      
+      # Define exclusions for downstream analysis
+      exclude_vars <- unique(c(high_cor_df$Var1, high_cor_df$Var2))
+      
+      # Print warning message
+      cat("\n")
+      cat("--- WARNING: HIGHLY CORRELATED VARIABLES (Correlation > 0.95) ---\n")
+      cat(
+        paste0(
+          "The following variable pairs have a correlation greater than 0.95 and ",
+          "will be candidates for **exclusion** from the analysis for the '", 
+          trajectory, "' trajectory:\n"
+        )
+      )
+      
+      # Print table
+      print(
+        high_cor_df %>%
+          dplyr::select(Pretty1, Pretty2, Correlation) %>%
+          dplyr::rename(Variable_1 = Pretty1, Variable_2 = Pretty2) %>%
+          data.frame()
+      )
+      
+      cat("\nVariables flagged for exclusion:\n")
+      print(exclude_vars)
+      cat("\n")
+      
+    } else {
+      cat("\n--- NOTE: No variable pairs found with correlation > 0.95. ---\n\n")
+    }
+  }
+  
+  # Add pretty labels for GT table
+  cor_df$Pretty1 <- MOD_LABELS[cor_df$Var1]
+  cor_df$Pretty2 <- MOD_LABELS[cor_df$Var2]
+  
+  # 6. Pivot to wide format
+  cor_wide <- cor_df %>%
+    dplyr::select(Pretty1, Pretty2, Correlation) %>%
+    tidyr::pivot_wider(
+      names_from = Pretty2,
+      values_from = Correlation
+    ) %>%
+    dplyr::rename(Variable = Pretty1)
+  
+  # Build GT table
+  cor_gt <- cor_wide %>%
+    gt::gt(rowname_col = "Variable") %>%
+    gt::tab_header(
+      title = paste0(trajectory, " Trajectory Correlation Matrix: Continuous Variables"),
+      subtitle = "Pearson correlations (pairwise complete observations)"
+    ) %>%
+    gt::fmt_number(columns = gt::everything(), decimals = 2) %>%
+    gt::data_color(
+      columns = gt::everything(),
+      colors = scales::col_numeric(
+        palette = c("red", "white", "red"),
+        domain = c(-1, 1)
+      )
+    ) %>%
+    gt::tab_options(
+      table.font.size = 12,
+      data_row.padding = gt::px(3),
+      column_labels.font.weight = "bold",
+      table.font.names = "Times New Roman"
+    )
+}
+
+correlations_df <- generate_correlation_gt(df_moderation, show_warnings = FALSE)
+correlations_df
+```
+
+Due to high collinearity, the variable "Time span of the study (months)" (a.k.a. TP1-TPX) will be excluded from all analyses for this Bayesian model. Trajectory-specific correlation matrices are provided in the corresponding sections of this model and variables that have a correlation index of > .95 are excluded from the analyses. 
+
 # Tables for Paper
 ## Continuous Moderators Summary Table
 
@@ -1411,5 +1533,6 @@ doc <- body_end_section_landscape(doc)
 print(doc, target = "Categorical_Moderator_Table.docx")
 ```
 ---
+
 
 
