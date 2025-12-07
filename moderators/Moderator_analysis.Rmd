@@ -937,7 +937,16 @@ Moderate_cat_table %>%
     table.font.size = px(13)
   )
 ```
-# Substantive Models
+
+# Model 1: Univariate GLMMs 
+
+The first modelling stage investigates each moderator separately using a generalized linear mixed model with a binomial likelihood and a random intercept for study. 
+This univariate approach provides an initial screening of simple associations between each moderator and the prevalence of a given trajectory. 
+
+For continuous moderators, the model describes how the expected trajectory prevalence changes with a one-unit increase in the predictor. For categorical moderators, it compares the prevalence between the reference category and each alternative category. These univariate models offer clear descriptive insights before moving to the more complex multivariate analyses.
+
+For each trajectory (Low, Decreasing, Increasing, High, and Moderate) we repeat the univariate analyses, accompanied by descriptive summaries and correlation matrices of the continuous predictors for that trajectory. This allows us to examine how predictors relate to each specific symptom course and whether certain patterns are consistent across trajectories.
+
 ## Setup
 ```{r substantive-mods-setup-functions}
 background_vars <- c(
@@ -1403,4 +1412,5 @@ doc <- body_end_section_landscape(doc)
 print(doc, target = "Categorical_Moderator_Table.docx")
 ```
 ---
+
 
