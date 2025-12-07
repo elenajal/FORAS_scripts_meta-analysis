@@ -1250,6 +1250,14 @@ make_group_table(md_res_Moderate, "Moderate Symptom Trajectory: Methodological M
 make_group_table(all_Moderate_res, "Moderate Symptom Trajectory: All Moderators")
 ```
 
+# Model 2: Multivariate BRMS Models with Missing-Data Imputation
+
+The second modelling stage estimates multivariate Bayesian regression models in which all moderators are entered simultaneously using a binomial likelihood. This approach allows us to assess the unique contribution of each predictor while adjusting for the influence of all other moderators in the model. By modelling all predictors jointly, these analyses move beyond simple associations and provide a more rigorous test of independent effects.
+
+Continuous predictors are standardised to place effects on a comparable scale, and categorical predictors are entered as factors with defined reference categories. Missing values in continuous moderators are handled directly within the Bayesian framework using model-based imputation, allowing all available information to be retained rather than relying on listwise deletion. Prior to model fitting, correlation matrices are used to identify highly collinear predictors, with variables exceeding a correlation of .95 excluded to ensure model stability.
+
+For each trajectory (Low, Decreasing, Increasing, High, and Moderate), three nested models are estimated: a background-only model, a model adding trauma-related moderators, and a full model including methodological variables. This hierarchical structure allows us to evaluate whether additional domains of moderators improve explanatory power beyond basic sample characteristics. Model results are summarised using posterior medians and 95% credible intervals, with convergence diagnostics used to verify estimation quality, and predictive performance compared across models using leave-one-out cross-validation.
+
 # Tables for Paper
 ## Continuous Moderators Summary Table
 
@@ -1403,4 +1411,5 @@ doc <- body_end_section_landscape(doc)
 print(doc, target = "Categorical_Moderator_Table.docx")
 ```
 ---
+
 
