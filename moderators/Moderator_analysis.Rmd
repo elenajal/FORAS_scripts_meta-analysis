@@ -119,6 +119,126 @@ summary_table <- data.frame(
 # Display as a table
 knitr::kable(summary_table, caption = "Descriptive Statistics of the Dataset")
 ```
+# Moderators
+
+The analyses examine a broad set of potential moderators that may explain differences in the prevalence of specific PTSD symptom trajectories. Moderators are grouped into three conceptual domains, and are listed below using descriptive labels; categorical levels and reference categories appear in parentheses.
+
+**Background variables**
+Country income (Levels: High income countries; Mid-, low-income); Developmental age (Levels: Adult, Youth); Education (%); Having a partner (%); Mean age; Minorities (%); Percentage of women; US vs Non-US (Levels: Non-US, US)
+
+**Trauma-related variables**
+Civilian vs Military (Levels: Civilian, Military); Discrete vs non-discrete trauma (Levels: Non-discrete, Discrete); HP/First responder vs other (Levels: HP/First responder, Other); Occupational trauma (Levels: No, Yes); Trauma exposure (Levels: Interpersonal trauma, Non-interpersonal trauma); Trauma nature (Levels: Combat, Injury, Natural disaster)
+
+**Methodological variables**
+Diagnostic Criteria (Levels: DSM-IV, DSM-5); Entropy; LGMM vs LCGA (Levels: LCGA, LGMM); Number of trajectories; PTSD symptom assessment (Levels: Interview, Self-reported scale); Quality score; Sample size / 100; Time between trauma and first assessment (months); Time between trauma and last assessment (months); Time point PTSD assessments (number); Time span of the study (months)
+
+```{r substantive-groups-setup}
+background_vars <- c(
+  "Mean_age", "Developmental_age","Percentage_women", "Percentage_minority", "Percentage_partner", "High_education", "Location", "Location_US"
+  )
+
+trauma_vars <- c(
+  "Discrete", "Health_First", "Trauma_type", "Military", "Occupational_trauma", "Trauma_exposure"
+  )
+
+method_vars <- c(
+  "Sample_Size_100", "Grolts", "Entropy", "Scale_moderator", "Diagnostic_DSM", "Trajectory_analysis", "TP_assessments", "N_trajectories",
+  "Trauma_TP1", "Trauma_TPX", "TP1_TPX"
+  )
+
+all_substantive_vars <- c(background_vars, trauma_vars, method_vars)
+
+# Centralized Moderator Specifications
+MOD_SPECS <- list(
+  list(var="Percentage_women",      type="cont", label="Percentage of women"),
+  list(var="Mean_age",              type="cont", label="Mean age"),
+  list(var="Percentage_minority",   type="cont", label="Minorities (%)"),
+  list(var="Percentage_partner",    type="cont", label="Having a partner (%)"),
+  list(var="High_education",        type="cont", label="Education (%)"),
+  list(var="TP_assessments",        type="cont", label="Time point PTSD assessments (number)"),
+  list(var="N_trajectories",        type="cont", label="Number of trajectories"),
+  list(var="Trauma_TP1",            type="cont", label="Time between trauma and first assessment (months)"),
+  list(var="TP1_TPX",               type="cont", label="Time span of the study (months)"),
+  list(var="Trauma_TPX",            type="cont", label="Time between trauma and last assessment (months)"),
+  list(var="Entropy",               type="cont", label="Entropy"),
+  list(var="Grolts",                type="cont", label="Quality score"),
+  list(var="Sample_Size_100",       type="cont", label="Sample size / 100"),
+
+  list(var="Diagnostic_DSM",        type="cat",  label="Diagnostic Criteria",
+       keep=c("4","5"), ref="4",
+       levels=c(`4`="DSM-IV", `5`="DSM-5")),
+
+  list(var="Occupational_trauma",   type="cat", label="Occupational trauma",
+       keep=c("No","Yes"), ref="No",
+       levels=c(No="No", Yes="Yes")),
+
+  list(var="Developmental_age",     type="cat", label="Developmental age",
+       keep=c("Adult","Youth"), ref="Adult",
+       levels=c(Adult="Adult", Youth="Youth")),
+
+  list(var="Location",              type="cat", label="Country income",
+       levels=c("High income countries"="High income countries",
+                "High"="High income countries",
+                "Mid-, low- income"="Mid-, low- income",
+                "Mid/low income"="Mid-, low- income")),
+
+  list(var="Location_US",           type="cat", label="US vs Non-US", ref="Other",
+       levels=c(Other="Non-US", US="US")),
+
+  list(var="Trajectory_analysis",   type="cat", label="LGMM vs LCGA",
+       levels=c(LCGA="LCGA", LGMM="LGMM")),
+
+  list(var="Scale_moderator",        type="cat", label="PTSD symptom assessment",
+       keep=c("Interview","Self"), ref="Interview",
+       levels=c(Interview="Interview", Self="Self-reported scale")),
+
+  list(var="Trauma_exposure",       type="cat", label="Trauma exposure",
+       keep=c("Inter","Non"), ref="Inter",
+       levels=c(Inter="Interpersonal trauma", Non="Non-interpersonal trauma")),
+
+  list(
+    var="Trauma_type",
+    type="cat",
+    label="Trauma nature",
+    keep=c("Combat","Natural","Injury"), 
+    ref="Combat",
+    levels=c(
+      Combat      = "Combat",
+      Injury      = "Injury",
+      Natural     = "Natural disaster",
+      "Natural "  = "Natural disaster"   # map trailing-space version
+    )
+  ),
+
+  list(var="Military",              type="cat", label="Civilian vs Military", ref="No",
+       levels=c(No="Civilian", Yes="Military")),
+
+  list(var="Discrete",              type="cat", label="Discrete vs non-discrete trauma",
+       keep=c("No","Yes"), ref="No",
+       levels=c(No="Non-discrete", Yes="Discrete")),
+
+  list(var="Health_First",          type="cat", label="HP/First responders vs other",
+       keep=c("Yes","No"), ref="Yes",
+       levels=c(Yes="HP/First responder", No="Other"))
+)
+
+MOD_LABELS <- purrr::map_chr(MOD_SPECS, "label") |>
+  setNames(purrr::map_chr(MOD_SPECS, "var"))
+
+CAT_SPECS <- MOD_SPECS[sapply(MOD_SPECS, `[[`, "type") == "cat"]
+names(CAT_SPECS) <- sapply(CAT_SPECS, `[[`, "var")
+
+LEVEL_MAP <- purrr::map_dfr(MOD_SPECS, \(spec) {
+  if (is.null(spec$levels)) return(NULL)
+  tibble::tibble(
+    moderator = spec$var,
+    orig      = names(spec$levels),
+    pretty    = unname(spec$levels),
+    stan      = gsub("[^A-Za-z0-9]", "", names(spec$levels))
+  )
+})
+
+```
 
 # Moderator Analyses
 
@@ -1449,5 +1569,6 @@ doc <- body_end_section_landscape(doc)
 print(doc, target = "Categorical_Moderator_Table.docx")
 ```
 ---
+
 
 
