@@ -55,6 +55,52 @@ df_moderation <- df_moderation %>%
 head(df_moderation)
 ```
 
+## Prepare Trajectory Datasets
+
+To analyse each symptom trajectory separately, we generate dedicated datasets in which the corresponding trajectory count and sample information are explicitly available. This step does not change the underlying data but clarifies the structure for later regression analyses and descriptive summaries. Each trajectory dataset also provides basic information about the total number of individuals and the number of contributing samples, grounding the modelling in a clear empirical context.
+
+```{r trajectories}
+trajectory_setup <- function(df, traj) {
+  
+  # Column names
+  perc_col <- paste0(traj, "_percentage")
+  n_col    <- paste0(traj, "_n")
+  
+  df_out <- df %>%
+    filter(!is.na(.data[[perc_col]])) %>%
+    mutate(!!n_col := round((.data[[perc_col]] / 100) * Sample_Size))
+  
+  return(df_out)
+}
+
+df_Low <- trajectory_setup(df_moderation, "Low")
+df_Decreasing <- trajectory_setup(df_moderation, "Decreasing")
+df_Increasing <- trajectory_setup(df_moderation, "Increasing")
+df_High <- trajectory_setup(df_moderation, "High")
+df_Moderate <- trajectory_setup(df_moderation, "Moderate")
+
+trajectory_descriptives <- function(df_traj, traj) {
+  
+  n_col <- paste0(traj, "_n")
+  
+  total_n <- sum(df_traj[[n_col]], na.rm = TRUE)
+  unique_samples <- length(unique(df_traj$Study))
+  
+  additional_info <- data.frame(
+    Description = c(
+      paste0("Total number of individuals in ", traj, " trajectory"),
+      "Number of unique samples"
+    ),
+    Value = format(c(total_n, unique_samples), big.mark = ",")
+  )
+  
+  knitr::kable(
+    additional_info,
+    caption = paste("Additional Descriptives for", traj, "Trajectory Analysis")
+  )
+}
+```
+
 ## Descriptive Statistics
 
 We provide basic descriptive statistics of the included studies, without excluding any data due to missingness.
@@ -73,7 +119,229 @@ summary_table <- data.frame(
 # Display as a table
 knitr::kable(summary_table, caption = "Descriptive Statistics of the Dataset")
 ```
+# Moderators
 
+The analyses examine a broad set of potential moderators that may explain differences in the prevalence of specific PTSD symptom trajectories. Moderators are grouped into three conceptual domains, and are listed below using descriptive labels; categorical levels and reference categories appear in parentheses.
+
+**Background variables**
+Country income (Levels: High income countries; Mid-, low-income); Developmental age (Levels: Adult, Youth); Education (%); Having a partner (%); Mean age; Minorities (%); Percentage of women; US vs Non-US (Levels: Non-US, US)
+
+**Trauma-related variables**
+Civilian vs Military (Levels: Civilian, Military); Discrete vs non-discrete trauma (Levels: Non-discrete, Discrete); HP/First responder vs other (Levels: HP/First responder, Other); Occupational trauma (Levels: No, Yes); Trauma exposure (Levels: Interpersonal trauma, Non-interpersonal trauma); Trauma nature (Levels: Combat, Injury, Natural disaster)
+
+**Methodological variables**
+Diagnostic Criteria (Levels: DSM-IV, DSM-5); Entropy; LGMM vs LCGA (Levels: LCGA, LGMM); Number of trajectories; PTSD symptom assessment (Levels: Interview, Self-reported scale); Quality score; Sample size / 100; Time between trauma and first assessment (months); Time between trauma and last assessment (months); Time point PTSD assessments (number); Time span of the study (months)
+
+```{r substantive-groups-setup}
+background_vars <- c(
+  "Mean_age", "Developmental_age","Percentage_women", "Percentage_minority", "Percentage_partner", "High_education", "Location", "Location_US"
+  )
+
+trauma_vars <- c(
+  "Discrete", "Health_First", "Trauma_type", "Military", "Occupational_trauma", "Trauma_exposure"
+  )
+
+method_vars <- c(
+  "Sample_Size_100", "Grolts", "Entropy", "Scale_moderator", "Diagnostic_DSM", "Trajectory_analysis", "TP_assessments", "N_trajectories",
+  "Trauma_TP1", "Trauma_TPX", "TP1_TPX"
+  )
+
+all_substantive_vars <- c(background_vars, trauma_vars, method_vars)
+
+# Centralized Moderator Specifications
+MOD_SPECS <- list(
+  list(var="Percentage_women",      type="cont", label="Percentage of women"),
+  list(var="Mean_age",              type="cont", label="Mean age"),
+  list(var="Percentage_minority",   type="cont", label="Minorities (%)"),
+  list(var="Percentage_partner",    type="cont", label="Having a partner (%)"),
+  list(var="High_education",        type="cont", label="Education (%)"),
+  list(var="TP_assessments",        type="cont", label="Time point PTSD assessments (number)"),
+  list(var="N_trajectories",        type="cont", label="Number of trajectories"),
+  list(var="Trauma_TP1",            type="cont", label="Time between trauma and first assessment (months)"),
+  list(var="TP1_TPX",               type="cont", label="Time span of the study (months)"),
+  list(var="Trauma_TPX",            type="cont", label="Time between trauma and last assessment (months)"),
+  list(var="Entropy",               type="cont", label="Entropy"),
+  list(var="Grolts",                type="cont", label="Quality score"),
+  list(var="Sample_Size_100",       type="cont", label="Sample size / 100"),
+
+  list(var="Diagnostic_DSM",        type="cat",  label="Diagnostic Criteria",
+       keep=c("4","5"), ref="4",
+       levels=c(`4`="DSM-IV", `5`="DSM-5")),
+
+  list(var="Occupational_trauma",   type="cat", label="Occupational trauma",
+       keep=c("No","Yes"), ref="No",
+       levels=c(No="No", Yes="Yes")),
+
+  list(var="Developmental_age",     type="cat", label="Developmental age",
+       keep=c("Adult","Youth"), ref="Adult",
+       levels=c(Adult="Adult", Youth="Youth")),
+
+  list(var="Location",              type="cat", label="Country income",
+       levels=c("High income countries"="High income countries",
+                "High"="High income countries",
+                "Mid-, low- income"="Mid-, low- income",
+                "Mid/low income"="Mid-, low- income")),
+
+  list(var="Location_US",           type="cat", label="US vs Non-US", ref="Other",
+       levels=c(Other="Non-US", US="US")),
+
+  list(var="Trajectory_analysis",   type="cat", label="LGMM vs LCGA",
+       levels=c(LCGA="LCGA", LGMM="LGMM")),
+
+  list(var="Scale_moderator",        type="cat", label="PTSD symptom assessment",
+       keep=c("Interview","Self"), ref="Interview",
+       levels=c(Interview="Interview", Self="Self-reported scale")),
+
+  list(var="Trauma_exposure",       type="cat", label="Trauma exposure",
+       keep=c("Inter","Non"), ref="Inter",
+       levels=c(Inter="Interpersonal trauma", Non="Non-interpersonal trauma")),
+
+  list(
+    var="Trauma_type",
+    type="cat",
+    label="Trauma nature",
+    keep=c("Combat","Natural","Injury"), 
+    ref="Combat",
+    levels=c(
+      Combat      = "Combat",
+      Injury      = "Injury",
+      Natural     = "Natural disaster",
+      "Natural "  = "Natural disaster"   # map trailing-space version
+    )
+  ),
+
+  list(var="Military",              type="cat", label="Civilian vs Military", ref="No",
+       levels=c(No="Civilian", Yes="Military")),
+
+  list(var="Discrete",              type="cat", label="Discrete vs non-discrete trauma",
+       keep=c("No","Yes"), ref="No",
+       levels=c(No="Non-discrete", Yes="Discrete")),
+
+  list(var="Health_First",          type="cat", label="HP/First responders vs other",
+       keep=c("Yes","No"), ref="Yes",
+       levels=c(Yes="HP/First responder", No="Other"))
+)
+
+MOD_LABELS <- purrr::map_chr(MOD_SPECS, "label") |>
+  setNames(purrr::map_chr(MOD_SPECS, "var"))
+
+CAT_SPECS <- MOD_SPECS[sapply(MOD_SPECS, `[[`, "type") == "cat"]
+names(CAT_SPECS) <- sapply(CAT_SPECS, `[[`, "var")
+
+LEVEL_MAP <- purrr::map_dfr(MOD_SPECS, \(spec) {
+  if (is.null(spec$levels)) return(NULL)
+  tibble::tibble(
+    moderator = spec$var,
+    orig      = names(spec$levels),
+    pretty    = unname(spec$levels),
+    stan      = gsub("[^A-Za-z0-9]", "", names(spec$levels))
+  )
+})
+
+```
+
+Below we present a summary of all moderators included in the analysis, describing whether they are continuous or categorical, as well as main descriptives concerning the variables.
+
+```{r moderator-summary-gt, message=FALSE}
+mod_df <- tibble::tibble(
+  var    = purrr::map_chr(MOD_SPECS, "var"),
+  type   = purrr::map_chr(MOD_SPECS, "type"),
+  label  = purrr::map_chr(MOD_SPECS, "label"),
+  keep   = purrr::map(MOD_SPECS, "keep"),
+  levels = purrr::map(MOD_SPECS, "levels")
+)
+
+cont_vars <- mod_df %>% filter(type == "cont") %>% pull(var)
+cat_vars  <- mod_df %>% filter(type == "cat")  %>% pull(var)
+
+#  Continuous summaries
+cont_summary <- df_moderation %>%
+  select(any_of(cont_vars)) %>%
+  pivot_longer(everything(), names_to = "var", values_to = "value") %>%
+  group_by(var) %>%
+  summarise(
+    Mean = mean(value, na.rm = TRUE),
+    SD   = sd(value, na.rm = TRUE),
+    Min  = min(value, na.rm = TRUE),
+    Max  = max(value, na.rm = TRUE),
+    Summary = glue("{round(Mean,2)} (SD = {round(SD,2)}), {round(Min,2)}–{round(Max,2)}"),
+    .groups = "drop"
+  ) %>%
+  left_join(mod_df, by = "var") %>%
+  transmute(
+    Variable = label,
+    Type = "Continuous",
+    Summary
+  )
+
+# Categorical summaries
+cat_summary <- map_dfr(cat_vars, function(v) {
+
+  spec <- mod_df %>% filter(var == v) %>% slice(1)
+
+  x <- df_moderation[[v]]
+  if (all(is.na(x))) return(NULL)
+
+  # Recode
+  if (!is.null(spec$levels[[1]])) {
+    x <- recode(as.character(x), !!!spec$levels[[1]])
+  }
+
+  # Apply KEEP filter
+  if (!is.null(spec$keep[[1]])) {
+    x <- x[x %in% spec$keep[[1]]]
+    if (length(x) == 0) return(NULL)
+  }
+
+  tab  <- table(x)
+  prop <- prop.table(tab)
+
+  tibble(
+    Variable = spec$label,
+    Type     = "Categorical",
+    Summary  = paste0(
+      names(tab), ": ",
+      as.integer(tab), " (", round(100 * as.numeric(prop), 1), "%)",
+      collapse = "; "
+    )
+  )
+})
+
+
+combined_table <- bind_rows(cont_summary, cat_summary)
+
+# GT rendering
+gt_summary <- combined_table %>%
+  gt() %>%
+  tab_header(
+    title = md("**Moderator Descriptive Summary**"),
+    subtitle = "Continuous moderators: Mean (SD), Min–Max; Categorical moderators: n (%)"
+  ) %>%
+  cols_label(
+    Variable = md("**Moderator**"),
+    Type     = md("**Type**"),
+    Summary  = md("**Summary**")
+  ) %>%
+  cols_align(
+    align = "left",
+    columns = c(Variable, Summary)
+  ) %>%
+  cols_align(
+    align = "center",
+    columns = Type
+  ) %>%
+  tab_options(
+    table.font.size = 14,
+    data_row.padding = px(4),
+    table.width = pct(100),
+    column_labels.background.color = "#f0f0f0",
+    column_labels.font.weight = "bold",
+    table.font.names = "Times New Roman"
+  ) %>%
+  opt_table_lines()   # nice simple borders
+
+gt_summary
+```
 # Moderator Analyses
 
 Here we fit binomial GLMMs (random intercept for `Study`) separately for the continuous and categorical moderators. For continuous moderators, we report the estimated prevalence at the reference (moderator = 0) and the marginal delta (approximate change in percentage points per 1‑unit increase). For categorical moderators, we report the estimated prevalence for the reference level and contrasted level(s).
