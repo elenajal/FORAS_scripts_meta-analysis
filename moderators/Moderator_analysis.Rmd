@@ -240,6 +240,108 @@ LEVEL_MAP <- purrr::map_dfr(MOD_SPECS, \(spec) {
 
 ```
 
+Below we present a summary of all moderators included in the analysis, describing whether they are continuous or categorical, as well as main descriptives concerning the variables.
+
+```{r moderator-summary-gt, message=FALSE}
+mod_df <- tibble::tibble(
+  var    = purrr::map_chr(MOD_SPECS, "var"),
+  type   = purrr::map_chr(MOD_SPECS, "type"),
+  label  = purrr::map_chr(MOD_SPECS, "label"),
+  keep   = purrr::map(MOD_SPECS, "keep"),
+  levels = purrr::map(MOD_SPECS, "levels")
+)
+
+cont_vars <- mod_df %>% filter(type == "cont") %>% pull(var)
+cat_vars  <- mod_df %>% filter(type == "cat")  %>% pull(var)
+
+#  Continuous summaries
+cont_summary <- df_moderation %>%
+  select(any_of(cont_vars)) %>%
+  pivot_longer(everything(), names_to = "var", values_to = "value") %>%
+  group_by(var) %>%
+  summarise(
+    Mean = mean(value, na.rm = TRUE),
+    SD   = sd(value, na.rm = TRUE),
+    Min  = min(value, na.rm = TRUE),
+    Max  = max(value, na.rm = TRUE),
+    Summary = glue("{round(Mean,2)} (SD = {round(SD,2)}), {round(Min,2)}–{round(Max,2)}"),
+    .groups = "drop"
+  ) %>%
+  left_join(mod_df, by = "var") %>%
+  transmute(
+    Variable = label,
+    Type = "Continuous",
+    Summary
+  )
+
+# Categorical summaries
+cat_summary <- map_dfr(cat_vars, function(v) {
+
+  spec <- mod_df %>% filter(var == v) %>% slice(1)
+
+  x <- df_moderation[[v]]
+  if (all(is.na(x))) return(NULL)
+
+  # Recode
+  if (!is.null(spec$levels[[1]])) {
+    x <- recode(as.character(x), !!!spec$levels[[1]])
+  }
+
+  # Apply KEEP filter
+  if (!is.null(spec$keep[[1]])) {
+    x <- x[x %in% spec$keep[[1]]]
+    if (length(x) == 0) return(NULL)
+  }
+
+  tab  <- table(x)
+  prop <- prop.table(tab)
+
+  tibble(
+    Variable = spec$label,
+    Type     = "Categorical",
+    Summary  = paste0(
+      names(tab), ": ",
+      as.integer(tab), " (", round(100 * as.numeric(prop), 1), "%)",
+      collapse = "; "
+    )
+  )
+})
+
+
+combined_table <- bind_rows(cont_summary, cat_summary)
+
+# GT rendering
+gt_summary <- combined_table %>%
+  gt() %>%
+  tab_header(
+    title = md("**Moderator Descriptive Summary**"),
+    subtitle = "Continuous moderators: Mean (SD), Min–Max; Categorical moderators: n (%)"
+  ) %>%
+  cols_label(
+    Variable = md("**Moderator**"),
+    Type     = md("**Type**"),
+    Summary  = md("**Summary**")
+  ) %>%
+  cols_align(
+    align = "left",
+    columns = c(Variable, Summary)
+  ) %>%
+  cols_align(
+    align = "center",
+    columns = Type
+  ) %>%
+  tab_options(
+    table.font.size = 14,
+    data_row.padding = px(4),
+    table.width = pct(100),
+    column_labels.background.color = "#f0f0f0",
+    column_labels.font.weight = "bold",
+    table.font.names = "Times New Roman"
+  ) %>%
+  opt_table_lines()   # nice simple borders
+
+gt_summary
+```
 # Moderator Analyses
 
 Here we fit binomial GLMMs (random intercept for `Study`) separately for the continuous and categorical moderators. For continuous moderators, we report the estimated prevalence at the reference (moderator = 0) and the marginal delta (approximate change in percentage points per 1‑unit increase). For categorical moderators, we report the estimated prevalence for the reference level and contrasted level(s).
@@ -1569,6 +1671,7 @@ doc <- body_end_section_landscape(doc)
 print(doc, target = "Categorical_Moderator_Table.docx")
 ```
 ---
+
 
 
 
