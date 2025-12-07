@@ -947,223 +947,125 @@ For continuous moderators, the model describes how the expected trajectory preva
 
 For each trajectory (Low, Decreasing, Increasing, High, and Moderate) we repeat the univariate analyses, accompanied by descriptive summaries and correlation matrices of the continuous predictors for that trajectory. This allows us to examine how predictors relate to each specific symptom course and whether certain patterns are consistent across trajectories.
 
-## Setup
-```{r substantive-mods-setup-functions}
-background_vars <- c(
-  "Mean_age", "Developmental_age","Percentage_women", "Percentage_minority", "Percentage_partner", "High_education", "Location", "Location_US"
-  )
+```{r mods-setup-fitting}
+# Consistent Optimizer
+ctrl <- lme4::glmerControl(optimizer = "bobyqa", optCtrl = list(maxfun = 2e5))
 
-trauma_vars <- c(
-  "Discrete", "Health_First", "Trauma_type", "Military", "Occupational_trauma", "Trauma_exposure"
-  )
-
-method_vars <- c(
-  "Sample_Size_100", "Grolts", "Entropy", "Scale_moderator", "Diagnostic_DSM", "Trajectory_analysis", "TP_assessments", "N_trajectories",
-  "Trauma_TP1", "TP1_TPX", "Trauma_TPX"
-  )
-
-.ctrl <- ctrl # Use the pre-defined 'ctrl'
-
-# Check if a variable is categorical using the pre-defined list from 'mods-setup-functions'
-is_categorical <- function(v) {
-  v %in% sapply(cat_vars, `[[`, "var")
+# add Success/Failure columns
+add_binom_cols <- function(data, success_col, denom_col) {
+  data %>%
+    dplyr::mutate(
+      Success = .data[[success_col]],
+      Failure = .data[[denom_col]] - Success
+    )
 }
 
-# get the p-value column name
-.pcol <- function(coef_mat) {
-  hits <- intersect(colnames(coef_mat), c("Pr(>|z|)", "Pr(>|t|)", "Pr(>|Chisq|)"))
-  if (length(hits)) hits[1] else NA_character_
+# extract a p-value from a model summary
+get_pval <- function(coefs, var) {
+  p_cols <- intersect(colnames(coefs), c("Pr(>|z|)", "Pr(>|t|)", "Pr(>|Chisq|)"))
+  if (length(p_cols) && var %in% rownames(coefs)) {
+    return(unname(coefs[var, p_cols[1]]))
+  }
+  return(NA_real_)
 }
 
-# Find keep/ref settings for a categorical variable from cat_vars list
-get_cat_specs <- function(var) {
-  specs <- Filter(function(x) x$var == var, cat_vars)
-  if (length(specs) == 1) return(specs[[1]]) else return(NULL)
+# Fit continuous model
+fit_cont <- function(data, var, success_col, denom_col) {
+  d <- data %>%
+    dplyr::filter(!is.na(.data[[var]])) %>%
+    add_binom_cols(success_col, denom_col)
+
+  m <- lme4::glmer(
+    stats::as.formula(paste0("cbind(Success, Failure) ~ ", var, " + (1|Study)")),
+    data = d,
+    family = binomial,
+    control = ctrl   # uses global ctrl
+  )
+
+  fe <- lme4::fixef(m)
+  b0 <- fe["(Intercept)"]
+  b1 <- fe[var]
+  p0 <- plogis(b0)
+  s  <- summary(m)$coefficients
+
+  tibble::tibble(
+    predictor = var,
+    Samples   = stats::nobs(m),
+    prevalence_at_0_pct = 100 * p0,
+    slope = b1,
+    marginal_delta_pp_per_unit = b1 * p0 * (1 - p0) * 100,
+    p_value = get_pval(s, var),
+    type="cont"
+  )
 }
 
-# Fit a categorical moderator (using get_cat_specs)
-fit_cat <- function(data, var, success_col = "Low_n", denom_col = "Sample_Size") {
-  specs <- get_cat_specs(var)
-  if (is.null(specs)) return(tibble::tibble())
+
+# Fit categorical model
+fit_cat <- function(data, var, success_col, denom_col) {
+  spec <- CAT_SPECS[[var]]
+  if (is.null(spec)) return(tibble::tibble())
 
   d <- data %>%
     dplyr::filter(!is.na(.data[[var]])) %>%
-    { if (!is.null(specs$keep)) dplyr::filter(., .data[[var]] %in% specs$keep) else . } %>%
+    { if (!is.null(spec$keep)) dplyr::filter(., .data[[var]] %in% spec$keep) else . } %>%
     add_binom_cols(success_col, denom_col) %>%
     dplyr::mutate(
-      !!rlang::sym(var) := forcats::as_factor(.data[[var]]),
-      !!rlang::sym(var) := if (!is.null(specs$ref) && specs$ref %in% levels(.data[[var]])) {
-        forcats::fct_relevel(.data[[var]], specs$ref)
-      } else {
-        forcats::fct_drop(.data[[var]])
-      }
+      !!var := forcats::fct_drop(forcats::as_factor(.data[[var]])),
+      !!var := if (!is.null(spec$ref) && spec$ref %in% levels(.data[[var]]))
+                 forcats::fct_relevel(.data[[var]], spec$ref)
+               else .data[[var]]
     )
 
   if (nlevels(d[[var]]) < 2) return(tibble::tibble())
 
-  fml <- stats::as.formula(paste0("cbind(Success, Failure) ~ ", var, " + (1 | Study)"))
-  m <- lme4::glmer(fml, data = d, family = binomial, control = .ctrl)
+  m <- lme4::glmer(
+    stats::as.formula(paste0("cbind(Success, Failure) ~ ", var, " + (1|Study)")),
+    data = d,
+    family = binomial,
+    control = ctrl   # uses global ctrl
+  )
 
   fe <- lme4::fixef(m)
-  b0 <- unname(fe["(Intercept)"])
+  s  <- summary(m)$coefficients
   lvls <- levels(d[[var]])
 
-  add <- sapply(lvls, function(L) { nm <- paste0(var, L); if (nm %in% names(fe)) fe[[nm]] else 0 })
-
-  s <- summary(m)$coefficients
-  pcol <- .pcol(s)
-  pvals <- sapply(lvls, function(L) {
+  add <- purrr::map_dbl(lvls, \(L) {
     nm <- paste0(var, L)
-    if (!is.na(pcol) && nm %in% rownames(s)) unname(s[nm, pcol]) else NA_real_
+    if (nm %in% names(fe)) fe[[nm]] else 0
   })
 
-  p <- plogis(b0 + add)
+  p <- plogis(fe["(Intercept)"] + add)
   p_ref <- p[1]
 
   tibble::tibble(
-    trajectory      = sub("_n$", "", success_col),
-    moderator       = var,
-    n               = stats::nobs(m),
-    ref_level       = lvls[1],
-    level           = lvls,
-    prevalence_pct  = 100 * p,
-    diff_vs_ref_pp  = 100 * (p - p_ref),
-    p_value         = pvals
+    moderator      = var,
+    n              = stats::nobs(m),
+    ref_level      = lvls[1],
+    level          = lvls,
+    prevalence_pct = 100 * p,
+    diff_vs_ref_pp = 100 * (p - p_ref),
+    p_value        = purrr::map_dbl(lvls, \(L) get_pval(s, paste0(var, L))),
+    type="cat"
   )
 }
 
 # Run a set of variables on a trajectory dataset
-run_group <- function(df_traj, vars, success_col = "Low_n", denom_col = "Sample_Size") {
-  is_cat <- vapply(vars, is_categorical, logical(1))
-  cont_vars_group <- vars[!is_cat]
-  cat_vars_group  <- vars[is_cat]
+run_group <- function(df_traj, vars, success_col, denom_col = "Sample_Size") {
 
-  res_cont <- if (length(cont_vars_group)) purrr::map_dfr(cont_vars_group, ~fit_cont(df_traj, .x, success_col, denom_col)) else tibble::tibble()
-  res_cat  <- if (length(cat_vars_group))  purrr::map_dfr(cat_vars_group, ~fit_cat (df_traj, .x, success_col, denom_col)) else tibble::tibble()
+  results <- purrr::map_dfr(vars, \(v) {
+    spec <- purrr::keep(MOD_SPECS, ~ .x$var == v)[[1]]
 
-  list(cont = res_cont, cat = res_cat)
-}
+    if (spec$type == "cont") {
+      fit_cont(df_traj, v, success_col, denom_col)
+    } else {
+      fit_cat(df_traj, v, success_col, denom_col)
+    }
+  })
 
-
-# Unified table column definitions
-UNIFIED_COLS <- c(
-  "Predictor", "k_shared",
-  "Ref_Prevalence_Cont", "Delta_Marginal_Cont", "p_value_shared",
-  "Ref_Name_Cat", "Ref_Prevalence_Cat", "Comp_Name_Cat", "Comp_Prevalence_Cat", "Delta_Marginal_Cat"
-)
-
-.empty_unified_tbl <- function() {
-  tibble::tibble(
-    Predictor          = character(),
-    k_shared           = integer(),
-    Ref_Prevalence_Cont  = character(),
-    Delta_Marginal_Cont  = character(),
-    p_value_shared     = character(),
-    Ref_Name_Cat       = character(),
-    Ref_Prevalence_Cat   = character(),
-    Comp_Name_Cat      = character(),
-    Comp_Prevalence_Cat  = character(),
-    Delta_Marginal_Cat   = character()
+  list(
+    cont = dplyr::filter(results, type=="cont"),
+    cat  = dplyr::filter(results, type=="cat")
   )
-}
-
-.na_label <- "-"
-
-# make_group_table function
-make_group_table <- function(group_res, title, na_label = .na_label) {
-
-  # --- A. Continuous ---
-  cont_tbl <- if (!is.null(group_res$cont) && nrow(group_res$cont) > 0) {
-    group_res$cont %>%
-      dplyr::mutate(
-        Predictor         = dplyr::recode(predictor, !!!mod_labels, .default = predictor),
-        k_shared          = as.integer(Samples),
-        Ref_Prevalence_Cont = sprintf("%.2f%%", prevalence_at_0_pct),
-        Delta_Marginal_Cont = paste0(round(marginal_delta_pp_per_unit, 2)),
-        p_value_shared      = paste0(fmt_p(p_value), ifelse(is.na(p_value), "", paste0(" ", sig(p_value)))),
-        Ref_Name_Cat        = na_label,
-        Ref_Prevalence_Cat  = na_label,
-        Comp_Name_Cat     = na_label,
-        Comp_Prevalence_Cat = na_label,
-        Delta_Marginal_Cat  = na_label
-      ) %>%
-      dplyr::select(dplyr::all_of(UNIFIED_COLS))
-  } else {
-    .empty_unified_tbl()
-  }
-
-  # --- B. Categorical ---
-  cat_tbl <- if (!is.null(group_res$cat) && nrow(group_res$cat) > 0) {
-    ref_prev <- group_res$cat %>%
-      dplyr::filter(level == ref_level) %>%
-      dplyr::select(moderator, ref_level, ref_prev = prevalence_pct)
-
-    group_res$cat %>%
-      dplyr::filter(level != ref_level) %>%
-      dplyr::left_join(ref_prev, by = c("moderator","ref_level")) %>%
-      dplyr::left_join(lvl_map, by = c("moderator","ref_level" = "orig")) %>%
-      dplyr::rename(pretty_ref = pretty) %>%
-      dplyr::left_join(lvl_map, by = c("moderator","level" = "orig")) %>%
-      dplyr::rename(pretty_cmp = pretty) %>%
-      dplyr::mutate(
-        Predictor         = dplyr::recode(moderator, !!!mod_labels, .default = moderator),
-        k_shared          = as.integer(n),
-        Ref_Prevalence_Cont = na_label,
-        Delta_Marginal_Cont = na_label,
-        Ref_Name_Cat      = dplyr::coalesce(pretty_ref, ref_level),
-        Ref_Prevalence_Cat  = sprintf("%.1f%%", ref_prev),
-        Comp_Name_Cat     = dplyr::coalesce(pretty_cmp, level),
-        Comp_Prevalence_Cat = sprintf("%.1f%%", prevalence_pct),
-        Delta_Marginal_Cat  = sprintf("%.2f", diff_vs_ref_pp),
-        p_value_shared    = paste0(fmt_p(p_value), ifelse(is.na(p_value), "", paste0(" ", sig(p_value))))
-      ) %>%
-      dplyr::select(dplyr::all_of(UNIFIED_COLS))
-  } else {
-    .empty_unified_tbl()
-  }
-
-
-  # ---- C. Bind + render ----
-  out <- dplyr::bind_rows(cont_tbl, cat_tbl)
-
-  gt::gt(out) %>%
-    gt::tab_header(title = enc2utf8(title)) %>%
-    gt::cols_label(
-      Predictor = gt::md("**Predictor**"),
-      k_shared = gt::md("k"),
-      p_value_shared = gt::md("p-value"),
-      Ref_Prevalence_Cont = gt::md("Relative<br>prevalence at 0%"),
-      Delta_Marginal_Cont = gt::md("Marginal Δ"), 
-      Ref_Name_Cat = gt::md("Reference (Name)"),
-      Ref_Prevalence_Cat = gt::md("Reference Prevalence"),
-      Comp_Name_Cat = gt::md("Comparison (Name)"),
-      Comp_Prevalence_Cat = gt::md("Comparison Prevalence"),
-      Delta_Marginal_Cat = gt::md("Marginal Δ")
-    ) %>%
-    gt::tab_spanner(
-      label = gt::md("**Continuous Moderators**"),
-      columns = c(Ref_Prevalence_Cont, Delta_Marginal_Cont),
-      id = "cont_group"
-    ) %>%
-    gt::tab_spanner(
-      label = gt::md("**Categorical Moderators**"),
-      columns = c(Ref_Name_Cat, Ref_Prevalence_Cat, Comp_Name_Cat, Comp_Prevalence_Cat, Delta_Marginal_Cat),
-      id = "cat_group"
-    ) %>%
-    gt::cols_align("left",  columns = Predictor) %>%
-    gt::cols_align("center", columns = -Predictor) %>%
-    gt::cols_width(Predictor ~ gt::px(180), k_shared ~ gt::px(50), p_value_shared ~ gt::px(70)) %>%
-    gt::tab_style(
-      style = gt::cell_text(weight = "bold"),
-      locations = gt::cells_column_labels(columns = gt::everything())
-    ) %>%
-    gt::tab_options(
-      table.width = gt::pct(100),
-      data_row.padding = gt::px(4),
-      column_labels.padding = gt::px(6),
-      table.font.size = gt::px(13),
-      table.font.names = "Times New Roman"
-    )
 }
 ```
 
@@ -1412,5 +1314,6 @@ doc <- body_end_section_landscape(doc)
 print(doc, target = "Categorical_Moderator_Table.docx")
 ```
 ---
+
 
 
