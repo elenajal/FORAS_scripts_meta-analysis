@@ -2115,6 +2115,87 @@ loo_gt_table <- function(
 }
 ```
 
+## 🚀 Low Symptom Trajectory
+
+### Data Preparation and Correlation of Continuous Variables
+
+Before fitting the multivariate models, data are prepared for Bayesian estimation through standardising continuous moderators and recoding categorical variables, ensuring stable estimation and interpretable coefficients.
+A correlation matrix for the Low trajectory is used to detect highly collinear variables, with those exceeding a .95 correlation being excluded from analyses.
+
+```{r BRMS-correlations-low, results='asis', message=FALSE}
+# Prepare the data (cleaning, standardizing, recoding)
+df_Low_clean <- prepare_data_brms(df_Low, exclude = "TP1_TPX")
+
+# Determine Collinearity
+correlations_Low <- generate_correlation_gt(df = df_Low_clean, trajectory = "Low")
+correlations_Low
+
+exclude_vars_Low <- correlations_Low$exclude_vars
+```
+
+### Model Fits and Diagnostics
+
+The analysis of the Low Trajectory multivariate models distils posterior distributions by reporting each predictor’s median effect size and 95% credible interval, highlighting predictors whose intervals do not include zero. Displaying the three models together shows how effects change as additional predictors are introduced. Model diagnostics, including R-hat and effective sample sizes, confirm good convergence and lend confidence to the reliability of the posterior estimates and resulting inferences.
+
+```{r BRMS-fitting-low, results='asis', message=FALSE}
+# Fit Models for Low Trajectory
+models_Low <- fit_brms_trajectory_models(
+  df               = df_Low_clean,
+  success_col_name = "Low_n",
+  cont_vars        = cont_vars,
+  cat_vars         = cat_vars,
+  mod_specs        = MOD_SPECS,
+  background_vars  = background_vars,
+  trauma_vars      = trauma_vars,
+  method_vars      = method_vars,
+  brms_args        = brms_args,
+  exclude_vars     = exclude_vars_Low
+)
+
+# Produce predictor summary table
+table_low <- generate_predictor_table_gt(
+  fitted_models = models_Low,
+  trajectory_name = "Low"
+)
+table_low
+
+# Diagnostics for each submodel
+diag_low_m1 <- diagnostic_gt_brms(model = models_Low$model_1_bg,
+                   model_name = "M1: Background",
+                   trajectory_name = "Low")
+
+diag_low_m2 <- diagnostic_gt_brms(model = models_Low$model_2_bg_trauma,
+                   model_name = "M2: Background + Trauma",
+                   trajectory_name = "Low")
+
+diag_low_m3 <- diagnostic_gt_brms(model = models_Low$model_3_full,
+                   model_name = "M3: Background + Trauma + Methodological",
+                   trajectory_name = "Low")
+
+diag_low_m1
+diag_low_m2
+diag_low_m3
+```
+
+### Model Comparison
+
+We compare the multivariate models of the Low trajectory using leave-one-out cross-validation (LOO-CV) to evaluate whether additional moderator domains improve predictive accuracy, ranking models by ELPD (with higher values indicating better performance), interpreting ΔELPD and its SE to gauge relative fit, and using optional model weights to summarize each model’s likelihood of generalizing well to new data.
+
+```{r BRMS-model-comparison-low, results='asis', message=FALSE}
+# Compare models using LOO-CV
+gt_results_Low <- loo_gt_table(
+  model_list = list(
+    models_Low$model_1_bg,
+    models_Low$model_2_bg_trauma,
+    models_Low$model_3_full
+  ),
+  model_names = c( "M1 (Background)", "M2 (Background + Trauma)", "M3 (Background + Trauma + Methodological)"),
+  response = "Lown"
+)
+
+gt_results_Low
+```
+
 # Tables for Paper
 ## Continuous Moderators Summary Table
 
@@ -2268,6 +2349,7 @@ doc <- body_end_section_landscape(doc)
 print(doc, target = "Categorical_Moderator_Table.docx")
 ```
 ---
+
 
 
 
