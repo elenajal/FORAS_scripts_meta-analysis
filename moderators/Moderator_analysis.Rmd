@@ -1380,6 +1380,188 @@ correlations_df
 
 Due to high collinearity, the variable "Time span of the study (months)" (a.k.a. TP1-TPX) will be excluded from all analyses for this Bayesian model. Trajectory-specific correlation matrices are provided in the corresponding sections of this model and variables that have a correlation index of > .95 are excluded from the analyses. 
 
+## Data Preperation for BRMS
+
+Before fitting multivariate models, the data are prepared for Bayesian estimation and missing-data imputation. Continuous moderators are standardised to place them on a comparable scale, and categorical variables are recoded to ensure proper factor structure. This preparation ensures stable estimation and interpretable coefficients in the multivariate analyses.
+
+```{r BRMS-data-prep}
+# Function to apply model specifications to a data frame
+apply_mod_specs <- function(df, mod_specs) {
+  
+  # Iterate over each specification
+  for (spec in mod_specs) {
+    
+    var  <- spec$var
+    type <- spec$type
+    
+    # Skip if variable is not in the data frame
+    if (!var %in% names(df)) next
+    
+    
+    # Handle continuous variables
+    if (identical(type, "cont")) {
+      
+      x_raw <- df[[var]]
+      # Coerce to numeric
+      x_num <- suppressWarnings(as.numeric(x_raw))
+      
+      # Warning check
+      if (all(is.na(x_num)) && any(!is.na(x_raw))) {
+        warning("Variable '", var, "' became all NA when coerced to numeric.")
+      }
+      
+      df[[var]] <- x_num
+      next
+    }
+    
+    
+    # Handle categorical variables
+    if (identical(type, "cat")) {
+      
+      # Clean string values
+      x <- df[[var]] |>
+        as.character() |>
+        trimws() |>
+        stringr::str_squish() 
+
+      
+      # Apply level mapping
+      if (!is.null(spec$levels)) {
+        lvl_map  <- spec$levels
+        raw_keys <- names(lvl_map)
+        
+        # Apply mapping
+        matched  <- x %in% raw_keys
+        x[matched] <- lvl_map[x[matched]]
+        
+        # Report unmatched raw values
+        unmatched_raw <- sort(unique(x_raw[!(x_raw %in% raw_keys) & !is.na(x_raw)]))
+        if (length(unmatched_raw) > 0L) {
+          message(
+            "apply_mod_specs: in variable '", var,
+            "', some raw values were not mapped by 'levels': ",
+            paste(unmatched_raw, collapse = ", ")
+          )
+        }
+      }
+      
+      
+      # Filter to keep only specified levels/labels
+      if (!is.null(spec$keep)) {
+        if (!is.null(spec$levels)) {
+          # Get the mapped labels
+          keep_labels <- unname(spec$levels[spec$keep])
+        } else {
+          # Use 'keep' values directly
+          keep_labels <- spec$keep
+        }
+        
+        # Set non-kept values to NA
+        x[!(x %in% keep_labels)] <- NA
+      }
+      
+      
+      # Convert to factor
+      x <- factor(x)
+      levels(x) <- trimws(levels(x))
+      
+      # Set reference level
+      if (!is.null(spec$ref)) {
+        ref_label <- spec$ref
+        
+        # Use mapped label for reference if available
+        if (!is.null(spec$levels) && spec$ref %in% names(spec$levels)) {
+          ref_label <- spec$levels[[spec$ref]]
+        }
+        
+        # Relevel
+        if (ref_label %in% levels(x)) {
+          x <- stats::relevel(x, ref = ref_label)
+        } else {
+          warning(
+            "Reference level '", spec$ref,
+            "' (mapped to '", ref_label,
+            "') not found in levels of '", var, "'."
+          )
+        }
+      }
+      
+      df[[var]] <- x
+    }
+  }
+  
+  df
+}
+
+# Function to prepare data for brms (apply specs and scale/factor)
+prepare_data_brms <- function(df, mod_specs = MOD_SPECS, exclude = NULL) {
+  
+  # Remove excluded variables from df entirely
+  if (!is.null(exclude)) {
+    df <- df %>% dplyr::select(-dplyr::all_of(exclude))
+  }
+  
+  # Extract names of continuous variables
+  cont_vars <- purrr::map_chr(
+    purrr::keep(mod_specs, ~ .x$type == "cont"),
+    "var"
+  )
+  
+  # Extract names of categorical variables
+  cat_vars <- purrr::map_chr(
+    purrr::keep(mod_specs, ~ .x$type == "cat"),
+    "var"
+  )
+  
+  # Identify variables present in df
+  cont_vars_in_df <- intersect(cont_vars, names(df))
+  cat_vars_in_df  <- intersect(cat_vars,  names(df))
+  
+  # Apply all variable specifications
+  df <- apply_mod_specs(df, mod_specs)
+  
+  # Scale continuous variables
+  if (length(cont_vars_in_df) > 0L) {
+    df <- df %>%
+      dplyr::mutate(
+        dplyr::across(
+          dplyr::all_of(cont_vars_in_df),
+          ~ {
+            v <- .
+            
+            v_num <- suppressWarnings(as.numeric(v))
+            
+            # Warning check
+            if (all(is.na(v_num)) && any(!is.na(v))) {
+              warning("After coercion, variable '", dplyr::cur_column(),
+                      "' is all NA; scaling will return all NA.")
+            }
+            
+            # Center and scale
+            as.numeric(scale(v_num))
+          }
+        )
+      )
+  }
+  
+  # Ensure categorical variables are factors
+  if (length(cat_vars_in_df) > 0L) {
+    df <- df %>%
+      dplyr::mutate(
+        dplyr::across(
+          dplyr::all_of(cat_vars_in_df),
+          ~ factor(.)
+        )
+      )
+  }
+  
+  # Drop unused levels
+  df <- droplevels(df)
+  
+  df
+}
+```
+
 # Tables for Paper
 ## Continuous Moderators Summary Table
 
@@ -1533,6 +1715,7 @@ doc <- body_end_section_landscape(doc)
 print(doc, target = "Categorical_Moderator_Table.docx")
 ```
 ---
+
 
 
 
