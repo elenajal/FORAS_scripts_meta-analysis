@@ -44,9 +44,9 @@ The current repository is focusing on the scripts used for the meta-analysis (Pr
 - **Features**:
    - Loads cleaned study‑level data (events, totals, study descriptors)
    - Defines moderators (design/sample features, follow‑up, quality, etc.)
-   - Fits random‑effects meta‑regressions (and subgroup analyses when relevant)
-   - Reports effect sizes, CIs, heterogeneity (τ², I²), model fit
-   - Produces forest/coef plots and summary tables to `moderators/output/`
+   - Fits models using two different approaches: univariate GLMMs and multivariate Bayesian regressions with the `brms` package
+   - Reports effect sizes, CIs, and model fit
+   - Produces forest/coef plots and summary tables
   
 ## `timeline_visualisation`
 - Located in `timeline visualisation/`
