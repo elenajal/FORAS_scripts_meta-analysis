@@ -14,13 +14,39 @@ R Markdown workflow to run **moderator / meta‑regression analyses** for the FO
 ---
 
 ## Requirements
-- R (≥ 4.2)
-- Suggested packages: `rmarkdown`, `tidyverse`, `metafor`, `meta`, `broom`, `ggplot2`
 
-Install essentials:
+- **R ≥ 4.2**
+- **Required packages:**
+  - `tidyverse`
+  - `lme4`
+  - `gt`
+  - `knitr`
+  - `brms`
+  - `rlang`
+
+## Installation
+
+Install all required packages with:
+
 ```r
-install.packages(c("rmarkdown", "tidyverse", "metafor", "meta", "broom", "ggplot2"))
+install.packages(c(
+  "tidyverse",
+  "lme4",
+  "gt",
+  "knitr",
+  "brms",
+  "rlang"
+))
 ```
+
+### brms Dependency Note
+
+The `brms` package requires **Stan** via the `rstan` backend. If you encounter installation issues, also run:
+
+```r
+install.packages("rstan")
+```
+
 
 ---
 
