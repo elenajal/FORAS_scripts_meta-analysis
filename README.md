@@ -7,6 +7,8 @@ pre-registered  as "[Trajectories of PTSD Following Traumatic Events: A Systemat
 
 The current repository is focusing on the scripts used for the meta-analysis (Pre-print: https://doi.org/10.31219/osf.io/fkjb2_v1).
 
+Data for the analyses are available on DataverseNL: https://doi.org/10.34894/XVYG52
+
 # Contents
 
 ## `merge_tables.py`
