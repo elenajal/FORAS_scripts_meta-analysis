@@ -78,7 +78,8 @@ Data for the analyses are available on DataverseNL: https://doi.org/10.34894/XVY
 2. `Data_extraction_model_results.xlsx` – model-specific results  
 3. `grolts_scores.csv` – GRoLTS scores (for details on calculation see: https://doi.org/10.5281/zenodo.17100045)
 
-These datasets are available on DataVerseNL: https://doi.org/10.34894/XVYG52
+These datasets are available on DataverseNL: https://doi.org/10.34894/XVYG52
+
 Download the datasets and place them in the `data/` directory at the root of the repository to ensure the notebooks can locate them.
 
 ### Running the Merging Script
