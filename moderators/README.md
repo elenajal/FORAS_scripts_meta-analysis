@@ -15,8 +15,8 @@ R Markdown workflow to run **moderator / meta‑regression analyses** for the FO
 
 ## Requirements
 
--   R ≥ 4.2\
--   Rtools (Windows only) --- required for compiling `rstan` and `brms`\
+-   R ≥ 4.2
+-   Rtools (Windows only) --- required for compiling `rstan` and `brms`
 -   Required R packages:
     -   tidyverse
     -   lme4
