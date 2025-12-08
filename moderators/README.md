@@ -15,20 +15,23 @@ R Markdown workflow to run **moderator / meta‑regression analyses** for the FO
 
 ## Requirements
 
-- **R ≥ 4.2**
-- **Required packages:**
-  - `tidyverse`
-  - `lme4`
-  - `gt`
-  - `knitr`
-  - `brms`
-  - `rlang`
+-   R ≥ 4.2\
+-   Rtools (Windows only) --- required for compiling `rstan` and `brms`\
+-   Required R packages:
+    -   tidyverse
+    -   lme4
+    -   gt
+    -   knitr
+    -   brms
+    -   rlang
 
-## Installation
+------------------------------------------------------------------------
+
+# Installation
 
 Install all required packages with:
 
-```r
+``` r
 install.packages(c(
   "tidyverse",
   "lme4",
@@ -39,14 +42,22 @@ install.packages(c(
 ))
 ```
 
-### brms Dependency Note
+------------------------------------------------------------------------
 
-The `brms` package requires **Stan** via the `rstan` backend. If you encounter installation issues, also run:
+# brms Dependency Note
 
-```r
+The `brms` package requires **Stan** via the `rstan` backend. If you
+encounter installation issues, also run:
+
+``` r
 install.packages("rstan")
 ```
 
+On **Windows**, make sure **Rtools** is installed *before* installing
+`rstan` or `brms`.
+
+Download Rtools here:\
+https://cran.r-project.org/bin/windows/Rtools/
 
 ---
 
