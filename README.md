@@ -7,6 +7,8 @@ pre-registered  as "[Trajectories of PTSD Following Traumatic Events: A Systemat
 
 The current repository is focusing on the scripts used for the meta-analysis (Pre-print: https://doi.org/10.31219/osf.io/fkjb2_v1).
 
+Data for the analyses are available on DataverseNL: https://doi.org/10.34894/XVYG52
+
 # Contents
 
 ## `merge_tables.py`
@@ -44,9 +46,9 @@ The current repository is focusing on the scripts used for the meta-analysis (Pr
 - **Features**:
    - Loads cleaned study‑level data (events, totals, study descriptors)
    - Defines moderators (design/sample features, follow‑up, quality, etc.)
-   - Fits random‑effects meta‑regressions (and subgroup analyses when relevant)
-   - Reports effect sizes, CIs, heterogeneity (τ², I²), model fit
-   - Produces forest/coef plots and summary tables to `moderators/output/`
+   - Fits models using two different approaches: univariate GLMMs and multivariate Bayesian regressions with the `brms` package
+   - Reports effect sizes, CIs, and model fit
+   - Produces forest/coef plots and summary tables
   
 ## `timeline_visualisation`
 - Located in `timeline visualisation/`
@@ -76,7 +78,8 @@ The current repository is focusing on the scripts used for the meta-analysis (Pr
 2. `Data_extraction_model_results.xlsx` – model-specific results  
 3. `grolts_scores.csv` – GRoLTS scores (for details on calculation see: https://doi.org/10.5281/zenodo.17100045)
 
-These datasets will be made available on DataVerseNL.
+These datasets are available on DataverseNL: https://doi.org/10.34894/XVYG52
+
 Download the datasets and place them in the `data/` directory at the root of the repository to ensure the notebooks can locate them.
 
 ### Running the Merging Script
