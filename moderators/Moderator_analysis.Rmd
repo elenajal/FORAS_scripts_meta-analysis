@@ -29,16 +29,10 @@ knitr::opts_knit$set(root.dir = dirname(rstudioapi::getActiveDocumentContext()$p
 ```{r load-packages}
 library(tidyverse)
 library(lme4)
-library(broom.mixed)
-library(forcats)
 library(gt)
 library(knitr)
-library(dplyr)
-library(purrr)
-library(stringr)
-library(tidyr)
-library(flextable)
-library(officer)
+library(brms)
+library(rlang)
 ```
 
 ## Load Data
@@ -2228,6 +2222,7 @@ big_gt <- df_big_wide %>%
 big_gt
 ```
 ---
+
 
 
 
