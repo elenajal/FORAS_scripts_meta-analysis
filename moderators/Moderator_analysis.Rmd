@@ -33,6 +33,7 @@ library(gt)
 library(knitr)
 library(brms)
 library(rlang)
+library(glue)
 ```
 
 ## Load Data
@@ -2222,6 +2223,7 @@ big_gt <- df_big_wide %>%
 big_gt
 ```
 ---
+
 
 
 
