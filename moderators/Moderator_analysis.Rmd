@@ -805,7 +805,11 @@ Here, we first provide the correlation matrix of continuous variables of the who
 
 ```{r correlation-table,  results='asis', message=FALSE}
 # GT Correlation Table for Continuous Predictors
-generate_correlation_gt <- function(df, vars = NULL, trajectory = NULL, show_warnings = TRUE) {
+generate_correlation_gt <- function(df, 
+                                    vars = NULL, 
+                                    trajectory = NULL, 
+                                    outcome = NULL,
+                                    show_warnings = TRUE) {
   
   # Get continuous variables from MOD_SPECS
   cont_vars <- MOD_SPECS |> 
@@ -848,33 +852,73 @@ generate_correlation_gt <- function(df, vars = NULL, trajectory = NULL, show_war
       high_cor_df$Pretty2 <- MOD_LABELS[high_cor_df$Var2]
       
       # Define exclusions for downstream analysis
-      exclude_vars <- unique(c(high_cor_df$Var1, high_cor_df$Var2))
+      if (!is.null(outcome)) {
       
+        # Correlation of each predictor with the outcome
+        outcome_cor <- cor(
+          df[, cont_vars, drop = FALSE],
+          df[[outcome]],
+          use = "pairwise.complete.obs"
+        )
+      
+        outcome_cor <- abs(outcome_cor)
+        names(outcome_cor) <- cont_vars  
+        # match()
+        high_cor_df <- high_cor_df %>%
+          dplyr::arrange(desc(abs(Correlation)))
+        
+        dropped <- character(0)
+        keep_results <- list()
+        
+        for (i in seq_len(nrow(high_cor_df))) {
+          
+          v1 <- high_cor_df$Var1[i]
+          v2 <- high_cor_df$Var2[i]
+          
+          # Skip if either variable already dropped
+          if (v1 %in% dropped || v2 %in% dropped) next
+          
+          cor1 <- outcome_cor[v1]
+          cor2 <- outcome_cor[v2]
+          
+          if (cor1 >= cor2) {
+            drop_var <- v1
+            keep_var <- v2
+          } else {
+            drop_var <- v2
+            keep_var <- v1
+          }
+          
+          dropped <- c(dropped, drop_var)
+          
+          keep_results[[length(keep_results) + 1]] <- data.frame(
+            Var1 = v1,
+            Var2 = v2,
+            drop_var = drop_var,
+            keep_var = keep_var
+          )
+        }
+        
+        high_cor_df <- dplyr::bind_rows(keep_results)
+        exclude_vars <- unique(high_cor_df$drop_var)
+      }
+            
       # Print warning message
       cat("\n")
-      cat("--- WARNING: HIGHLY CORRELATED VARIABLES (Correlation > 0.90) ---\n")
+      cat("--- Warning: Highly Correlated Variables (Correlation > 0.90) ---\n")
       cat(
         paste0(
-          "The following variable pairs have a correlation greater than 0.90 and ",
+          "The following variables have a correlation greater than 0.90 and ",
           "will be candidates for **exclusion** from the analysis for the '", 
-          trajectory, "' trajectory:\n"
+          trajectory, "' trajectory."
         )
       )
       
-      # Print table
-      print(
-        high_cor_df %>%
-          dplyr::select(Pretty1, Pretty2, Correlation) %>%
-          dplyr::rename(Variable_1 = Pretty1, Variable_2 = Pretty2) %>%
-          data.frame()
-      )
-      
-      cat("\nVariables flagged for exclusion:\n")
-      print(exclude_vars)
-      cat("\n")
+      cat("\nHigh-correlation resolution (dropping only one per pair):\n")
+      print(high_cor_df[, c("Var1", "Var2", "drop_var", "keep_var")])
       
     } else {
-      cat("\n--- NOTE: No variable pairs found with correlation > 0.90. ---\n\n")
+      cat("\n--- No variable pairs found with correlation > 0.90. ---\n\n")
     }
   }
   
@@ -2222,6 +2266,7 @@ big_gt <- df_big_wide %>%
 big_gt
 ```
 ---
+
 
 
 
