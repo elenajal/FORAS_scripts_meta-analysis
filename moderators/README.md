@@ -24,24 +24,9 @@ R Markdown workflow to run **moderator / meta‑regression analyses** for the FO
     -   knitr
     -   brms
     -   rlang
+    -   glue
 
 ---
-
-### Installation
-
-Install all required packages with:
-
-``` r
-install.packages(c(
-  "tidyverse",
-  "lme4",
-  "gt",
-  "knitr",
-  "brms",
-  "rlang"
-))
-```
-
 ### brms Dependency Note
 
 The `brms` package requires **Stan** via the `rstan` backend. If you
@@ -57,6 +42,21 @@ On **Windows**, make sure **Rtools** is installed *before* installing
 Download Rtools here:\
 https://cran.r-project.org/bin/windows/Rtools/
 
+### Installation
+
+Install all required packages with:
+
+``` r
+install.packages(c(
+    "tidyverse",
+    "lme4",
+    "gt",
+    "knitr",
+    "brms",
+    "rlang",
+    "glue"
+))
+```
 ---
 
 ## Inputs
