@@ -794,7 +794,7 @@ make_group_table(all_Moderate_res, "Moderate Symptom Trajectory: All Moderators"
 
 The second modelling stage estimates multivariate Bayesian regression models in which all moderators are entered simultaneously using a binomial likelihood. This approach allows us to assess the unique contribution of each predictor while adjusting for the influence of all other moderators in the model. By modelling all predictors jointly, these analyses move beyond simple associations and provide a more rigorous test of independent effects.
 
-Continuous predictors are standardised to place effects on a comparable scale, and categorical predictors are entered as factors with defined reference categories. Missing values in continuous moderators are handled directly within the Bayesian framework using model-based imputation, allowing all available information to be retained rather than relying on listwise deletion. Prior to model fitting, correlation matrices are used to identify highly collinear predictors, with variables exceeding a correlation of .95 excluded to ensure model stability.
+Continuous predictors are standardised to place effects on a comparable scale, and categorical predictors are entered as factors with defined reference categories. Missing values in continuous moderators are handled directly within the Bayesian framework using model-based imputation, allowing all available information to be retained rather than relying on listwise deletion. Prior to model fitting, correlation matrices are used to identify highly collinear predictors, with variables exceeding a correlation of .90 excluded to ensure model stability.
 
 For each trajectory (Low, Decreasing, Increasing, High, and Moderate), three nested models are estimated: a background-only model, a model adding trauma-related moderators, and a full model including methodological variables. This hierarchical structure allows us to evaluate whether additional domains of moderators improve explanatory power beyond basic sample characteristics. Model results are summarised using posterior medians and 95% credible intervals, with convergence diagnostics used to verify estimation quality, and predictive performance compared across models using leave-one-out cross-validation.
 
@@ -805,7 +805,11 @@ Here, we first provide the correlation matrix of continuous variables of the who
 
 ```{r correlation-table,  results='asis', message=FALSE}
 # GT Correlation Table for Continuous Predictors
-generate_correlation_gt <- function(df, vars = NULL, trajectory = NULL, show_warnings = TRUE) {
+generate_correlation_gt <- function(df, 
+                                    vars = NULL, 
+                                    trajectory = NULL, 
+                                    outcome = NULL,
+                                    show_warnings = TRUE) {
   
   # Get continuous variables from MOD_SPECS
   cont_vars <- MOD_SPECS |> 
@@ -835,7 +839,7 @@ generate_correlation_gt <- function(df, vars = NULL, trajectory = NULL, show_war
     
     # Filter for high correlations and exclude self-pairs + duplicates
     high_cor_df <- cor_df %>%
-      dplyr::filter(abs(Correlation) > 0.95 & Var1 != Var2) %>%
+      dplyr::filter(abs(Correlation) > 0.90 & Var1 != Var2) %>%
       dplyr::rowwise() %>%
       dplyr::filter(Var1 < Var2) %>%
       dplyr::ungroup()
@@ -848,33 +852,73 @@ generate_correlation_gt <- function(df, vars = NULL, trajectory = NULL, show_war
       high_cor_df$Pretty2 <- MOD_LABELS[high_cor_df$Var2]
       
       # Define exclusions for downstream analysis
-      exclude_vars <- unique(c(high_cor_df$Var1, high_cor_df$Var2))
+      if (!is.null(outcome)) {
       
+        # Correlation of each predictor with the outcome
+        outcome_cor <- cor(
+          df[, cont_vars, drop = FALSE],
+          df[[outcome]],
+          use = "pairwise.complete.obs"
+        )
+      
+        outcome_cor <- abs(outcome_cor)
+        names(outcome_cor) <- cont_vars  
+        # match()
+        high_cor_df <- high_cor_df %>%
+          dplyr::arrange(desc(abs(Correlation)))
+        
+        dropped <- character(0)
+        keep_results <- list()
+        
+        for (i in seq_len(nrow(high_cor_df))) {
+          
+          v1 <- high_cor_df$Var1[i]
+          v2 <- high_cor_df$Var2[i]
+          
+          # Skip if either variable already dropped
+          if (v1 %in% dropped || v2 %in% dropped) next
+          
+          cor1 <- outcome_cor[v1]
+          cor2 <- outcome_cor[v2]
+          
+          if (cor1 >= cor2) {
+            drop_var <- v1
+            keep_var <- v2
+          } else {
+            drop_var <- v2
+            keep_var <- v1
+          }
+          
+          dropped <- c(dropped, drop_var)
+          
+          keep_results[[length(keep_results) + 1]] <- data.frame(
+            Var1 = v1,
+            Var2 = v2,
+            drop_var = drop_var,
+            keep_var = keep_var
+          )
+        }
+        
+        high_cor_df <- dplyr::bind_rows(keep_results)
+        exclude_vars <- unique(high_cor_df$drop_var)
+      }
+            
       # Print warning message
       cat("\n")
-      cat("--- WARNING: HIGHLY CORRELATED VARIABLES (Correlation > 0.95) ---\n")
+      cat("--- Warning: Highly Correlated Variables (Correlation > 0.90) ---\n")
       cat(
         paste0(
-          "The following variable pairs have a correlation greater than 0.95 and ",
+          "The following variables have a correlation greater than 0.90 and ",
           "will be candidates for **exclusion** from the analysis for the '", 
-          trajectory, "' trajectory:\n"
+          trajectory, "' trajectory."
         )
       )
       
-      # Print table
-      print(
-        high_cor_df %>%
-          dplyr::select(Pretty1, Pretty2, Correlation) %>%
-          dplyr::rename(Variable_1 = Pretty1, Variable_2 = Pretty2) %>%
-          data.frame()
-      )
-      
-      cat("\nVariables flagged for exclusion:\n")
-      print(exclude_vars)
-      cat("\n")
+      cat("\nHigh-correlation resolution (dropping only one per pair):\n")
+      print(high_cor_df[, c("Var1", "Var2", "drop_var", "keep_var")])
       
     } else {
-      cat("\n--- NOTE: No variable pairs found with correlation > 0.95. ---\n\n")
+      cat("\n--- No variable pairs found with correlation > 0.90. ---\n\n")
     }
   }
   
@@ -918,7 +962,7 @@ correlations_df <- generate_correlation_gt(df_moderation, show_warnings = FALSE)
 correlations_df
 ```
 
-Due to high collinearity, the variable "Time span of the study (months)" (a.k.a. TP1-TPX) will be excluded from all analyses for this Bayesian model. Trajectory-specific correlation matrices are provided in the corresponding sections of this model and variables that have a correlation index of > .95 are excluded from the analyses. 
+Due to high collinearity, the variable "Time span of the study (months)" (a.k.a. TP1-TPX) will be excluded from all analyses for this Bayesian model. Trajectory-specific correlation matrices are provided in the corresponding sections of this model and variables that have a correlation index of > .90 are excluded from the analyses. 
 
 ## Data Preperation for BRMS
 
@@ -1660,14 +1704,14 @@ loo_gt_table <- function(
 ### Data Preparation and Correlation of Continuous Variables
 
 Before fitting the multivariate models, data are prepared for Bayesian estimation through standardising continuous moderators and recoding categorical variables, ensuring stable estimation and interpretable coefficients.
-A correlation matrix for the Low trajectory is used to detect highly collinear variables, with those exceeding a .95 correlation being excluded from analyses.
+A correlation matrix for the Low trajectory is used to detect highly collinear variables, with those exceeding a .90 correlation being excluded from analyses.
 
 ```{r BRMS-correlations-low, results='asis', message=FALSE}
 # Prepare the data (cleaning, standardizing, recoding)
 df_Low_clean <- prepare_data_brms(df_Low, exclude = "TP1_TPX")
 
 # Determine Collinearity
-correlations_Low <- generate_correlation_gt(df = df_Low_clean, trajectory = "Low")
+correlations_Low <- generate_correlation_gt(df = df_Low_clean, trajectory = "Low", outcome = "success_binary")
 correlations_Low
 
 exclude_vars_Low <- correlations_Low$exclude_vars
@@ -1741,14 +1785,14 @@ gt_results_Low
 ### Data Preparation and Correlation of Continuous Variables
 
 Before fitting the multivariate models, data are prepared for Bayesian estimation through standardising continuous moderators and recoding categorical variables, ensuring stable estimation and interpretable coefficients.
-A correlation matrix for the Decreasing trajectory is used to detect highly collinear variables, with those exceeding a .95 correlation being excluded from analyses.
+A correlation matrix for the Decreasing trajectory is used to detect highly collinear variables, with those exceeding a .90 correlation being excluded from analyses.
 
 ```{r BRMS-correlations-Decreasing, results='asis', message=FALSE}
 # Prepare the data (cleaning, standardizing, recoding)
 df_Decreasing_clean <- prepare_data_brms(df_Decreasing, exclude = "TP1_TPX")
 
 # Determine Collinearity
-correlations_Decreasing <- generate_correlation_gt(df = df_Decreasing_clean, trajectory = "Decreasing")
+correlations_Decreasing <- generate_correlation_gt(df = df_Decreasing_clean, trajectory = "Decreasing", outcome = "success_binary")
 correlations_Decreasing
 
 exclude_vars_Decreasing <- correlations_Decreasing$exclude_vars
@@ -1822,14 +1866,14 @@ gt_results_Decreasing
 ### Data Preparation and Correlation of Continuous Variables
 
 Before fitting the multivariate models, data are prepared for Bayesian estimation through standardising continuous moderators and recoding categorical variables, ensuring stable estimation and interpretable coefficients.
-A correlation matrix for the Increasing trajectory is used to detect highly collinear variables, with those exceeding a .95 correlation being excluded from analyses.
+A correlation matrix for the Increasing trajectory is used to detect highly collinear variables, with those exceeding a .90 correlation being excluded from analyses.
 
 ```{r BRMS-correlations-Increasing, results='asis', message=FALSE}
 # Prepare the data (cleaning, standardizing, recoding)
 df_Increasing_clean <- prepare_data_brms(df_Increasing, exclude = "TP1_TPX")
 
 # Determine Collinearity
-correlations_Increasing <- generate_correlation_gt(df = df_Increasing_clean, trajectory = "Increasing")
+correlations_Increasing <- generate_correlation_gt(df = df_Increasing_clean, trajectory = "Increasing", outcome = "success_binary")
 correlations_Increasing
 
 exclude_vars_Increasing <- correlations_Increasing$exclude_vars
@@ -1903,14 +1947,14 @@ gt_results_Increasing
 ### Data Preparation and Correlation of Continuous Variables
 
 Before fitting the multivariate models, data are prepared for Bayesian estimation through standardising continuous moderators and recoding categorical variables, ensuring stable estimation and interpretable coefficients.
-A correlation matrix for the High trajectory is used to detect highly collinear variables, with those exceeding a .95 correlation being excluded from analyses.
+A correlation matrix for the High trajectory is used to detect highly collinear variables, with those exceeding a .90 correlation being excluded from analyses.
 
 ```{r BRMS-correlations-High, results='asis', message=FALSE}
 # Prepare the data (cleaning, standardizing, recoding)
 df_High_clean <- prepare_data_brms(df_High, exclude = "TP1_TPX")
 
 # Determine Collinearity
-correlations_High <- generate_correlation_gt(df = df_High_clean, trajectory = "High")
+correlations_High <- generate_correlation_gt(df = df_High_clean, trajectory = "High", outcome = "success_binary")
 correlations_High
 
 exclude_vars_High <- correlations_High$exclude_vars
@@ -1984,14 +2028,14 @@ gt_results_High
 ### Data Preparation and Correlation of Continuous Variables
 
 Before fitting the multivariate models, data are prepared for Bayesian estimation through standardising continuous moderators and recoding categorical variables, ensuring stable estimation and interpretable coefficients.
-A correlation matrix for the Moderate trajectory is used to detect highly collinear variables, with those exceeding a .95 correlation being excluded from analyses.
+A correlation matrix for the Moderate trajectory is used to detect highly collinear variables, with those exceeding a .90 correlation being excluded from analyses.
 
 ```{r BRMS-correlations-Moderate, results='asis', message=FALSE}
 # Prepare the data (cleaning, standardizing, recoding)
 df_Moderate_clean <- prepare_data_brms(df_Moderate, exclude = "TP1_TPX")
 
 # Determine Collinearity
-correlations_Moderate <- generate_correlation_gt(df = df_Moderate_clean, trajectory = "Moderate")
+correlations_Moderate <- generate_correlation_gt(df = df_Moderate_clean, trajectory = "Moderate", outcome = "success_binary")
 correlations_Moderate
 
 exclude_vars_Moderate <- correlations_Moderate$exclude_vars
@@ -2222,6 +2266,9 @@ big_gt <- df_big_wide %>%
 big_gt
 ```
 ---
+
+
+
 
 
 
