@@ -1148,7 +1148,7 @@ prepare_data_brms <- function(df, mod_specs = MOD_SPECS, exclude = NULL) {
 
 ## BMRS setup
 
-The Bayesian models are implemented using the brms package, which provides flexible model specification and seamless integration of missing-data imputation via the mi() syntax. The chosen sampling settings (2 chains, 3000 iterations) balance computational feasibility with the need for stable posterior estimates.
+The Bayesian models are implemented using the brms package, which provides flexible model specification and seamless integration of missing-data imputation via the mi() syntax. The chosen sampling settings balance computational feasibility with the need for stable posterior estimates.
 
 ```{r BRMS-setup}
 brms_args <- list(
@@ -1160,7 +1160,7 @@ brms_args <- list(
   seed      = 1,
   backend   = "cmdstanr",
   refresh   = 0,
-  control   = list(adapt_delta = .85)
+  control   = list(adapt_delta = .999)
 )
 ```
 
