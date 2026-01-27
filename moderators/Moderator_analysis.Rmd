@@ -1055,7 +1055,11 @@ apply_mod_specs <- function(df, mod_specs) {
         x[!(x %in% keep_labels)] <- NA
       }
       
-      
+      # Handle missing values (NA) by mapping them to the na_level string
+      if (!is.null(spec$na_level)) {
+        x[is.na(x)] <- spec$na_level
+      }
+
       # Convert to factor
       x <- factor(x)
       levels(x) <- trimws(levels(x))
@@ -2277,6 +2281,7 @@ big_gt <- df_big_wide %>%
 big_gt
 ```
 ---
+
 
 
 
