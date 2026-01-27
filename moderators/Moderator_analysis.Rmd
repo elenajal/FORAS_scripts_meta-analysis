@@ -1465,9 +1465,9 @@ generate_predictor_table_gt <- function(fitted_models,
     ) %>%
     gt::data_color( # Color cells based on 'Important' status
       columns = dplyr::all_of(importance_cols),
-      colors  = function(x) dplyr::case_when(
+      fn  = function(x) dplyr::case_when(
         x == "Yes" ~ "#d4edda", # Light green for 'Yes'
-        x == "No"  ~ "white",   # White for 'No'
+        x == "No"  ~ "lightgray",   # Light gray for 'No'
         TRUE       ~ "white"
       )
     ) %>%
@@ -2270,6 +2270,7 @@ big_gt <- df_big_wide %>%
 big_gt
 ```
 ---
+
 
 
 
