@@ -1798,10 +1798,10 @@ A correlation matrix for the Decreasing trajectory is used to detect highly coll
 
 ```{r BRMS-correlations-Decreasing, results='asis', message=FALSE}
 # Prepare the data (cleaning, standardizing, recoding)
-df_Decreasing_clean <- prepare_data_brms(df_Decreasing, exclude = "TP1_TPX")
+df_Decreasing_clean <- prepare_data_brms(df_Decreasing, exclude = c("TP1_TPX", "Military"))
 
 # Determine Collinearity
-correlations_Decreasing <- generate_correlation_gt(df = df_Decreasing_clean, trajectory = "Decreasing", outcome = "success_binary")
+correlations_Decreasing <- generate_correlation_gt(df = df_Decreasing_clean, trajectory = "Decreasing", outcome = "Decreasing_n")
 correlations_Decreasing
 
 exclude_vars_Decreasing <- correlations_Decreasing$exclude_vars
@@ -1879,10 +1879,10 @@ A correlation matrix for the Increasing trajectory is used to detect highly coll
 
 ```{r BRMS-correlations-Increasing, results='asis', message=FALSE}
 # Prepare the data (cleaning, standardizing, recoding)
-df_Increasing_clean <- prepare_data_brms(df_Increasing, exclude = "TP1_TPX")
+df_Increasing_clean <- prepare_data_brms(df_Increasing, exclude = c("TP1_TPX", "Military"))
 
 # Determine Collinearity
-correlations_Increasing <- generate_correlation_gt(df = df_Increasing_clean, trajectory = "Increasing", outcome = "success_binary")
+correlations_Increasing <- generate_correlation_gt(df = df_Increasing_clean, trajectory = "Increasing", outcome = "Increasing_n")
 correlations_Increasing
 
 exclude_vars_Increasing <- correlations_Increasing$exclude_vars
@@ -1960,10 +1960,10 @@ A correlation matrix for the High trajectory is used to detect highly collinear 
 
 ```{r BRMS-correlations-High, results='asis', message=FALSE}
 # Prepare the data (cleaning, standardizing, recoding)
-df_High_clean <- prepare_data_brms(df_High, exclude = "TP1_TPX")
+df_High_clean <- prepare_data_brms(df_High, exclude = c("TP1_TPX", "Military"))
 
 # Determine Collinearity
-correlations_High <- generate_correlation_gt(df = df_High_clean, trajectory = "High", outcome = "success_binary")
+correlations_High <- generate_correlation_gt(df = df_High_clean, trajectory = "High", outcome = "High_n")
 correlations_High
 
 exclude_vars_High <- correlations_High$exclude_vars
@@ -2041,10 +2041,10 @@ A correlation matrix for the Moderate trajectory is used to detect highly collin
 
 ```{r BRMS-correlations-Moderate, results='asis', message=FALSE}
 # Prepare the data (cleaning, standardizing, recoding)
-df_Moderate_clean <- prepare_data_brms(df_Moderate, exclude = "TP1_TPX")
+df_Moderate_clean <- prepare_data_brms(df_Moderate, exclude = c("TP1_TPX", "Military"))
 
 # Determine Collinearity
-correlations_Moderate <- generate_correlation_gt(df = df_Moderate_clean, trajectory = "Moderate", outcome = "success_binary")
+correlations_Moderate <- generate_correlation_gt(df = df_Moderate_clean, trajectory = "Moderate", outcome = "Moderate_n")
 correlations_Moderate
 
 exclude_vars_Moderate <- correlations_Moderate$exclude_vars
@@ -2275,6 +2275,7 @@ big_gt <- df_big_wide %>%
 big_gt
 ```
 ---
+
 
 
 
