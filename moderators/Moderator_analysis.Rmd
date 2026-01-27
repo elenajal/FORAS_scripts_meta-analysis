@@ -1307,28 +1307,38 @@ fit_brms_models_mi <- function(df,
     return(fit)
   }
   
-  # Case 2: MI for continuous vars
-  mi_formulas <- lapply(vars_with_na, function(v) {
-    bf(as.formula(paste0(v, " | mi() ~ 1")), family = gaussian())
+ # Case 2: MI for Numeric (Continuous & 0/1) and Factor (Multi-level) vars
+  
+  # Imputation formulas for Numeric variables (Gaussian family)
+  mi_formulas_numeric <- lapply(vars_numeric_na, function(v) {
+    brms::bf(stats::as.formula(paste0(v, " | mi() ~ 1")), family = stats::gaussian()) 
   })
+  
+  # Imputation formulas for Factor variables (Gaussian approximation for simplicity/compatibility)
+  mi_formulas_factor <- lapply(vars_factor_na, function(v) {
+    message(paste("Warning: Imputing multi-level factor", v, "using Gaussian approximation."))
+    brms::bf(stats::as.formula(paste0(v, " | mi() ~ 1")), family = stats::gaussian()) 
+  })
+  
+  mi_formulas <- c(mi_formulas_numeric, mi_formulas_factor)
   
   full_formula <- Reduce(`+`, c(list(main_formula), mi_formulas))
   
-  default_priors <- get_prior(formula = full_formula, data = df)
+  default_priors <- brms::get_prior(formula = full_formula, data = df) 
   
   fit <- do.call(
-    brm,
+    brms::brm,
     c(
       list(
         formula = full_formula,
-        data    = df,
+        data    = df, 
         prior   = default_priors
       ),
       brms_args
     )
   )
   
-  fit
+  return(fit)
 }
 
 # looping logic for running all models for one trajectory
@@ -2305,6 +2315,7 @@ big_gt <- df_big_wide %>%
 big_gt
 ```
 ---
+
 
 
 
