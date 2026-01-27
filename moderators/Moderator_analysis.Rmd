@@ -234,7 +234,7 @@ LEVEL_MAP <- purrr::map_dfr(MOD_SPECS, \(spec) {
 
 ```
 
-Below we present a summary of all moderators included in the analysis, describing whether they are continuous or categorical, as well as main descriptives concerning the variables.
+Below we present a summary of all moderators included in the analysis, across the full dataset, as well as trajectory specific. The table presents overall descriptive statistics for each moderator variable and compares how these moderators are distributed across the five identified trajectory classes (Low, Decreasing, Increasing, High, and Moderate). Continuous moderators are summarized using the mean, standard deviation, and observed range. Categorical moderators show the proportion of studies falling into each category overall and within each trajectory class. Moderators are grouped into background characteristics, trauma characteristics, and methodological characteristics to facilitate interpretation.
 
 ```{r moderator-summary-gt, message=FALSE}
 mod_df <- tibble::tibble(
@@ -2266,6 +2266,7 @@ big_gt <- df_big_wide %>%
 big_gt
 ```
 ---
+
 
 
 
