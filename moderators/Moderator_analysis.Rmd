@@ -1189,6 +1189,24 @@ Comparing these models helps determine whether trauma-related or methodological 
 These groups are widely the same across trajectories, but may differ slightly based on exclusions due to collinearity.
 
 ```{r BRMS-model-fitting-functions}
+get_binary_cat_vars <- function(df, cat_vars_all) {
+  binary_vars <- c()
+  for (v in intersect(cat_vars_all, names(df))) {
+    x_non_na <- df[[v]][!is.na(df[[v]])]
+    if (is.factor(x_non_na) && nlevels(x_non_na) == 2) {
+      binary_vars <- c(binary_vars, v)
+    }
+  }
+  return(binary_vars)
+}
+factor_to_01 <- function(fct_var) {
+  if (!is.factor(fct_var) || nlevels(fct_var) != 2) {
+    stop("Input must be a two-level factor.")
+  }
+  # Converts factor levels (1, 2) to (0, 1), where the reference level (1) becomes 0.
+  return(as.numeric(fct_var) - 1)
+}
+
 ## Build predictor families
 build_predictor_families <- function(df, cont_vars, cat_vars) {
   
@@ -2273,6 +2291,7 @@ big_gt <- df_big_wide %>%
 big_gt
 ```
 ---
+
 
 
 
