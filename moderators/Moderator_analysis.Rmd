@@ -50,6 +50,20 @@ head(df_moderation)
 To analyse each symptom trajectory separately, we generate dedicated datasets in which the corresponding trajectory count and sample information are explicitly available. This step does not change the underlying data but clarifies the structure for later regression analyses and descriptive summaries. Each trajectory dataset also provides basic information about the total number of individuals and the number of contributing samples, grounding the modelling in a clear empirical context.
 
 ```{r trajectories}
+# calculate Sample_Size_100
+df_moderation <- df_moderation %>%
+  mutate(Sample_Size_100 = Sample_Size / 100)
+
+# correct labeling error
+df_moderation$Health_First[df_moderation$MID == "M1356_2"] <- "No"
+
+# add level "HP/first responder" to dataset
+df_moderation <- df_moderation %>%
+  mutate(Trauma_type = case_when(
+    Health_First == "Yes" ~ "HP/first responder",
+    TRUE ~ as.character(Trauma_type)
+  ))
+
 trajectory_setup <- function(df, traj) {
   
   # Column names
@@ -2262,6 +2276,7 @@ big_gt <- df_big_wide %>%
 big_gt
 ```
 ---
+
 
 
 
