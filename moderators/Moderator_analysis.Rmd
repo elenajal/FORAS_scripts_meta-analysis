@@ -1488,126 +1488,173 @@ diagnostic_gt_brms <- function(model,
                                subtitle = NULL,
                                mod_labels = MOD_LABELS) {
 
-  s       <- summary(model) # Get the model summary
-  parts <- list() # Initialize list to store results
-  
+  s <- summary(model)
+  parts <- list()
+  # Canonicalize coefficient names
+  canonical_term <- function(term) {
+    term <- gsub("`", "", term)
+    term <- sub("^[^_]+_", "", term)   # drop outcome prefix
+    term <- sub("^mi", "", term)       # drop mi prefix
+    term
+  }
+  # Detect categorical moderator (longest name wins)
+  cat_vars <- names(CAT_SPECS)
+  cat_vars <- cat_vars[order(nchar(cat_vars), decreasing = TRUE)]
+  detect_cat_var <- function(term) {
+    tt <- canonical_term(term)
+    if (tt %in% cat_vars) return(tt)
+    for (v in cat_vars) {
+      if (startsWith(tt, v)) return(v)
+    }
+    NA_character_
+  }
+  # Pretty predictor labels
   pretty_from_mod <- function(term) {
-    t0 <- gsub("`", "", term)
-    t0 <- gsub("^mi\\(|\\)$", "", t0)
-  
-    # 1. Exact match first
-    if (t0 %in% names(mod_labels)) {
-      return(mod_labels[[t0]])
-    }
-  
-    # 2. Ordered substring matching (longest names first)
-    hits <- names(mod_labels)[order(nchar(names(mod_labels)), decreasing = TRUE)]
-    hit  <- purrr::keep(hits, ~ grepl(.x, t0))
-  
-    if (length(hit) >= 1) {
-      return(mod_labels[[hit[1]]])
-    }
-  
-    # 3. Underscore-insensitive matching
-    t1 <- gsub("_", "", t0)
-    mod_vars_no_underscore <- gsub("_", "", names(mod_labels))
-    match_index <- match(t1, mod_vars_no_underscore)
-  
-    if (!is.na(match_index)) {
-      original_var_name <- names(mod_labels)[match_index]
-      return(mod_labels[[original_var_name]])
-    }
-  
-    # 4. Default fallback
-    return(term)
+    tt <- canonical_term(term)
+    if (tt %in% names(mod_labels)) return(mod_labels[[tt]])
+    v <- detect_cat_var(term)
+    if (!is.na(v) && v %in% names(mod_labels)) return(mod_labels[[v]])
+    term
   }
-
-
-  clean_sigma_name <- function(term) { # Function to clean and label sigma terms
-    t <- term
-    t <- gsub("`", "", t)
-    
-    if (t == "sigma") return("Residual SD") # Label for overall residual standard deviation
-    
-    if (grepl("^sigma_", t)) { # Label for group-specific residual SD
-      var_name <- sub("^sigma_", "", t)
-      pretty_label <- pretty_from_mod(var_name)
-      return(paste0("Residual SD: ", pretty_label))
+  
+  pretty_sigma <- function(term) {
+    # exact sigma
+    if (term == "sigma")
+      return("Residual SD")
+  
+    if (!startsWith(term, "sigma_"))
+      return(term)
+  
+    raw <- sub("^sigma_", "", term)
+  
+    # direct match
+    if (raw %in% names(MOD_LABELS)) {
+      return(paste0("Residual SD: ", MOD_LABELS[[raw]]))
     }
-    
-    if (grepl("^sd_", t)) { # Label for random effects standard deviations
-      t1 <- sub("^sd_", "", t)
-      parts <- strsplit(t1, "__")[[1]]
-      if (length(parts) == 2) {
-        pretty_param <- pretty_from_mod(parts[2])
-        return(paste0("SD(", parts[1], ": ", pretty_param, ")"))
+  
+    # underscore-insensitive match
+    raw_clean  <- gsub("_", "", raw)
+    keys_clean <- gsub("_", "", names(MOD_LABELS))
+  
+    idx <- match(raw_clean, keys_clean)
+  
+    if (!is.na(idx)) {
+      return(paste0(
+        "Residual SD: ",
+        MOD_LABELS[[names(MOD_LABELS)[idx]]]
+      ))
+    }
+  
+    paste0("Residual SD: ", raw)
+  }
+  # Contrast extractor
+  extract_contrast_info <- function(term) {
+    var <- detect_cat_var(term)
+    if (is.na(var)) return("")
+    spec <- CAT_SPECS[[var]]
+    lvls <- LEVEL_MAP |> dplyr::filter(moderator == var)
+    if (nrow(lvls) == 0) return("")
+    # reference
+    ref_code <- if (!is.null(spec$ref)) spec$ref else lvls$orig[1]
+    ref_pretty <- lvls |>
+      dplyr::filter(orig == ref_code) |>
+      dplyr::pull(pretty)
+    ref_pretty <- if (length(ref_pretty)) ref_pretty[1] else ref_code
+    tt <- canonical_term(term)
+    # CASE 1: binary categorical converted to 0/1
+    if (tt == var) {
+      if (!is.null(spec$keep) && length(spec$keep) >= 2) {
+        other_code <- spec$keep[spec$keep != ref_code][1]
+      } else {
+        other_code <- lvls$orig[lvls$orig != ref_code][1]
       }
+      other_pretty <- lvls |>
+        dplyr::filter(orig == other_code) |>
+        dplyr::pull(pretty)
+      other_pretty <- if (length(other_pretty)) other_pretty[1] else other_code
+      return(paste0(ref_pretty, " → ", other_pretty))
     }
-    
-    return(term) # Return original term if no cleaning applied
+    # CASE 2: multi-level categorical (suffix present)
+    token <- sub(paste0("^", var), "", tt)
+    if (nzchar(token)) {
+      lev_pretty <- lvls |>
+        dplyr::filter(orig == token) |>
+        dplyr::pull(pretty)
+      lev_pretty <- if (length(lev_pretty)) lev_pretty[1] else token
+      return(paste0(ref_pretty, " → ", lev_pretty))
+    }
+    ""
   }
-  
-  if ("fixed" %in% include) { # Process fixed effects
+  term_is_cat <- function(term) {
+    !is.na(detect_cat_var(term))
+  }
+  # Fixed effects
+  if ("fixed" %in% include) {
     fx <- as.data.frame(s$fixed)
     fx$term <- rownames(fx)
-    fx <- fx %>%
-      dplyr::filter(!grepl("Intercept", term, ignore.case = TRUE)) # Exclude Intercept
-    parts$fixed <- fx %>% dplyr::select(term, Estimate, Est.Error, Rhat, Bulk_ESS, Tail_ESS) # Select diagnostic columns
+    fx <- fx |>
+      dplyr::filter(!grepl("Intercept", term, ignore.case = TRUE)) |>
+      dplyr::mutate(
+        Predictor = purrr::map_chr(term, pretty_from_mod),
+        Contrast  = purrr::map_chr(term, extract_contrast_info),
+        type      = ifelse(vapply(term, term_is_cat, logical(1)), "cat", "cont")
+      ) |>
+      dplyr::arrange(desc(type))
+    parts$fixed <- fx |>
+      dplyr::select(Predictor, Contrast,
+                    Estimate, Est.Error, Rhat, Bulk_ESS, Tail_ESS)
   }
+  # Sigma parameters
+  if ("sigma" %in% include && !is.null(s$spec_pars)) {
   
-  if ("sigma" %in% include && !is.null(s$spec_pars)) { # Process special parameters (sigma/SD)
     sg <- as.data.frame(s$spec_pars)
     sg$term <- rownames(sg)
-    
-    sg <- sg %>%
-      dplyr::filter(!grepl("Intercept", term, ignore.case = TRUE)) %>%  # Exclude Intercept
-      dplyr::mutate(term = purrr::map_chr(term, clean_sigma_name))      # Apply cleaning and labeling
-    
-    parts$sigma <- sg %>% dplyr::select(term, Estimate, Est.Error, Rhat, Bulk_ESS, Tail_ESS) # Select diagnostic columns
-  }
   
-  tab <- dplyr::bind_rows(parts, .id = "component") # Combine fixed and sigma parts, adding a component ID
-  
-  tab <- tab %>%
-    dplyr::mutate(
-      Predictor = ifelse(
-        component == "fixed",
-        purrr::map_chr(term, pretty_from_mod), # Get pretty labels for fixed effects
-        term # Keep cleaned sigma labels
+    sg <- sg |>
+      dplyr::filter(!grepl("Intercept", term, ignore.case = TRUE)) |>
+      dplyr::mutate(
+        Predictor = purrr::map_chr(term, pretty_sigma),
+        Contrast  = ""
       )
-    ) %>%
-    dplyr::select(component, Predictor, Estimate, Est.Error, Rhat, Bulk_ESS, Tail_ESS) # Select final columns
   
-  gt::gt(tab, rowname_col = "Predictor", groupname_col = "component") %>% # Initialize gt table with grouping
+    parts$sigma <- sg |>
+      dplyr::select(Predictor, Contrast,
+                    Estimate, Est.Error, Rhat, Bulk_ESS, Tail_ESS)
+  }
+  # Combine + GT
+  tab <- dplyr::bind_rows(parts, .id = "component")
+  gt::gt(tab, groupname_col = "component") |>
     gt::tab_header(
-      title = paste0(title,
-                     if (!is.null(model_name)) paste0(" — ", model_name) else "",
-                     if (!is.null(trajectory_name)) paste0(" (", trajectory_name, ")") else ""
+      title = paste0(
+        title,
+        if (!is.null(model_name)) paste0(" — ", model_name),
+        if (!is.null(trajectory_name)) paste0(" (", trajectory_name, ")")
       ),
       subtitle = subtitle
-    ) %>% # Add title and subtitle
-    gt::fmt_number( # Format numeric columns
+    ) |>
+    gt::fmt_number(
       columns = c(Estimate, Est.Error, Rhat, Bulk_ESS, Tail_ESS),
       decimals = 3
-    ) %>%
-    gt::cols_label( # Apply column labels
+    ) |>
+    gt::cols_label(
+      Predictor = "Predictor",
+      Contrast  = "Contrast (Ref → Level)",
       Estimate  = "Estimate",
       Est.Error = "Std. Error",
       Rhat      = "Rhat",
       Bulk_ESS  = "Bulk ESS",
       Tail_ESS  = "Tail ESS"
-    ) %>%
-    gt::opt_row_striping() %>% # Add row striping
-    gt::tab_style( # Style column headers
-      style     = gt::cell_text(weight = "bold"),
+    ) |>
+    gt::opt_row_striping() |>
+    gt::tab_style(
+      style = gt::cell_text(weight = "bold"),
       locations = gt::cells_column_labels()
-    ) %>%
-    gt::tab_options( # Set table options
-      table.font.size  = 12,
+    ) |>
+    gt::tab_options(
+      table.font.size = 12,
       table.font.names = "Times New Roman"
     )
 }
-
 # Model Comparison Function
 loo_gt_table <- function(
   model_list,
@@ -2270,6 +2317,7 @@ big_gt <- df_big_wide %>%
 big_gt
 ```
 ---
+
 
 
 
