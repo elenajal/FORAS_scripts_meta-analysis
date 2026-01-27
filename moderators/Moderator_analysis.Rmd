@@ -903,19 +903,25 @@ generate_correlation_gt <- function(df,
         exclude_vars <- unique(high_cor_df$drop_var)
       }
             
-      # Print warning message
-      cat("\n")
-      cat("--- Warning: Highly Correlated Variables (Correlation > 0.90) ---\n")
+      # warning: dropped variables
+    if (length(exclude_vars) > 0) {
+    
+      dropped_pretty <- MOD_LABELS[exclude_vars]
+    
+      cat("<hr>")
+      cat("<br><strong>Warning: Highly Correlated Variables Removed</strong><br>")
       cat(
         paste0(
-          "The following variables have a correlation greater than 0.90 and ",
-          "will be candidates for **exclusion** from the analysis for the '", 
-          trajectory, "' trajectory."
+          "The following continuous predictors were dropped due to high correlation ",
+          "(|r| > 0.90) based on their weaker association with the outcome ",
+          "for the <em>", trajectory, "</em> trajectory:<br><br>",
+          "<em>",
+          paste(dropped_pretty, collapse = ", "),
+          "</em><br><br>"
         )
       )
-      
-      cat("\nHigh-correlation resolution (dropping only one per pair):\n")
-      print(high_cor_df[, c("Var1", "Var2", "drop_var", "keep_var")])
+    
+    }
       
     } else {
       cat("\n--- No variable pairs found with correlation > 0.90. ---\n\n")
@@ -945,7 +951,7 @@ generate_correlation_gt <- function(df,
     gt::fmt_number(columns = gt::everything(), decimals = 2) %>%
     gt::data_color(
       columns = gt::everything(),
-      colors = scales::col_numeric(
+      fn = scales::col_numeric(
         palette = c("red", "white", "red"),
         domain = c(-1, 1)
       )
@@ -2266,6 +2272,7 @@ big_gt <- df_big_wide %>%
 big_gt
 ```
 ---
+
 
 
 
