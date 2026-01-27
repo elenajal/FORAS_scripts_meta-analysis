@@ -969,6 +969,7 @@ correlations_df
 ```
 
 Due to high collinearity, the variable "Time span of the study (months)" (a.k.a. TP1-TPX) will be excluded from all analyses for this Bayesian model. Trajectory-specific correlation matrices are provided in the corresponding sections of this model and variables that have a correlation index of > .90 are excluded from the analyses. 
+Further, to account for data sparcity and high overlap, some categorical variables will be combined/omitted from the analysis. Due to high overlap between the variable "Military" and the level "Combat" of the variable "Trauma type", the variable "Military" will also be excluded from all analyses for this Bayesian model.
 
 ## Data Preperation for BRMS
 
@@ -2272,6 +2273,7 @@ big_gt <- df_big_wide %>%
 big_gt
 ```
 ---
+
 
 
 
