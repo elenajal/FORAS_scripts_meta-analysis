@@ -230,13 +230,42 @@ CAT_SPECS <- MOD_SPECS[sapply(MOD_SPECS, `[[`, "type") == "cat"]
 names(CAT_SPECS) <- sapply(CAT_SPECS, `[[`, "var")
 
 LEVEL_MAP <- purrr::map_dfr(MOD_SPECS, \(spec) {
-  if (is.null(spec$levels)) return(NULL)
-  tibble::tibble(
-    moderator = spec$var,
-    orig      = names(spec$levels),
-    pretty    = unname(spec$levels),
-    stan      = gsub("[^A-Za-z0-9]", "", names(spec$levels))
+  
+  # Initialize the level data frame
+  df_levels <- tibble::tibble(
+    moderator = character(),
+    orig      = character(),
+    pretty    = character(),
+    stan      = character()
   )
+  
+  # 1. Handle explicit levels
+  if (!is.null(spec$levels)) {
+    df_levels <- tibble::tibble(
+      moderator = spec$var,
+      orig      = names(spec$levels),
+      pretty    = unname(spec$levels)
+    )
+  }
+  
+  # 2. Handle na_level (missing values)
+  if (!is.null(spec$na_level)) {
+    # map NA (the original missing value) to the pretty na_level.
+    df_na <- tibble::tibble(
+      moderator = spec$var,
+      orig      = NA_character_, 
+      pretty    = spec$na_level
+    )
+    df_levels <- dplyr::bind_rows(df_levels, df_na)
+  }
+  
+  if (nrow(df_levels) == 0) return(NULL)
+  
+  # Add the 'stan' cleaned version
+  df_levels <- df_levels %>%
+    dplyr::mutate(stan = gsub("[^A-Za-z0-9]", "", pretty))
+  
+  return(df_levels)
 })
 
 ```
@@ -2273,6 +2302,7 @@ big_gt <- df_big_wide %>%
 big_gt
 ```
 ---
+
 
 
 
