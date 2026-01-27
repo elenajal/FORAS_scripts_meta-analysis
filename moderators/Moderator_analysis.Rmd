@@ -1708,10 +1708,10 @@ A correlation matrix for the Low trajectory is used to detect highly collinear v
 
 ```{r BRMS-correlations-low, results='asis', message=FALSE}
 # Prepare the data (cleaning, standardizing, recoding)
-df_Low_clean <- prepare_data_brms(df_Low, exclude = "TP1_TPX")
+df_Low_clean <- prepare_data_brms(df_Low, exclude = c("TP1_TPX", "Military"))
 
 # Determine Collinearity
-correlations_Low <- generate_correlation_gt(df = df_Low_clean, trajectory = "Low", outcome = "success_binary")
+correlations_Low <- generate_correlation_gt(df = df_Low_clean, trajectory = "Low", outcome = "Low_n" )
 correlations_Low
 
 exclude_vars_Low <- correlations_Low$exclude_vars
@@ -1767,6 +1767,15 @@ We compare the multivariate models of the Low trajectory using leave-one-out cro
 
 ```{r BRMS-model-comparison-low, results='asis', message=FALSE}
 # Compare models using LOO-CV
+# 1. Add LOO to all models in the list
+models_Low <- purrr::map(models_Low, function(m) {
+  add_criterion(m, "loo", resp = "Lown", moment_match = TRUE)
+})
+# 2. Compare them using the 'invoke' or 'do.call' method
+comparison <- loo_compare(models_Low)
+# 3. Print the results
+print(comparison, simplify = FALSE)# Compare models using LOO-CV
+
 gt_results_Low <- loo_gt_table(
   model_list = list(
     models_Low$model_1_bg,
@@ -2266,6 +2275,7 @@ big_gt <- df_big_wide %>%
 big_gt
 ```
 ---
+
 
 
 
