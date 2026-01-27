@@ -131,7 +131,7 @@ The analyses examine a broad set of potential moderators that may explain differ
 Country income (Levels: High income countries; Mid-, low-income); Developmental age (Levels: Adult, Youth); Education (%); Having a partner (%); Mean age; Minorities (%); Percentage of women; US vs Non-US (Levels: Non-US, US)
 
 **Trauma-related variables**
-Civilian vs Military (Levels: Civilian, Military); Discrete vs non-discrete trauma (Levels: Non-discrete, Discrete); HP/First responder vs other (Levels: HP/First responder, Other); Occupational trauma (Levels: No, Yes); Trauma exposure (Levels: Interpersonal trauma, Non-interpersonal trauma); Trauma nature (Levels: Combat, Injury, Natural disaster)
+Civilian vs Military (Levels: Civilian, Military); Discrete vs non-discrete trauma (Levels: Non-discrete, Discrete); HP/First responder vs other (Levels: HP/First responder, Other); Occupational trauma (Levels: No, Yes); Trauma exposure (Levels: Interpersonal trauma, Non-interpersonal trauma); Trauma type (Levels: Combat, Injury, Natural disaster, HP/first responder, Other)
 
 **Methodological variables**
 Diagnostic Criteria (Levels: DSM-IV, DSM-5); Entropy; LGMM vs LCGA (Levels: LCGA, LGMM); Number of trajectories; PTSD symptom assessment (Levels: Interview, Self-reported scale); Quality score; Sample size / 100; Time between trauma and first assessment (months); Time between trauma and last assessment (months); Time point PTSD assessments (number); Time span of the study (months)
@@ -2276,6 +2276,7 @@ big_gt <- df_big_wide %>%
 big_gt
 ```
 ---
+
 
 
 
