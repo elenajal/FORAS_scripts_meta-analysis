@@ -1407,12 +1407,16 @@ generate_predictor_table_gt <- function(fitted_models,
                         var_labels[BaseVar],
                         BaseVar),
       Predictor = ifelse( # Create the final predictor label
-        Level == "" | is.na(Level),
+        Level == "" | is.na(Level), # If no level suffix, use the base label (e.g., for continuous variables)
         VarLabel,
-        paste0(VarLabel) # If Level exists, combine it with VarLabel
+        # If a level exists, combine base label and level in parentheses
+        paste0(VarLabel, " (", Level, ")") 
       )
     ) %>%
     dplyr::ungroup() %>%
+    dplyr::filter(
+      !(grepl("Trauma type", Predictor) & grepl("(Other)", Predictor))
+    ) %>%
     dplyr::mutate(
       Effect = paste0( # Format effect size and 95% CI
         sprintf("%.2f", Median), " [",
@@ -2266,6 +2270,7 @@ big_gt <- df_big_wide %>%
 big_gt
 ```
 ---
+
 
 
 
