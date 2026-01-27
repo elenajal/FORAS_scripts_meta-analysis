@@ -181,15 +181,14 @@ MOD_SPECS <- list(
        levels=c(Adult="Adult", Youth="Youth")),
 
   list(var="Location",              type="cat", label="Country income",
-       levels=c("High income countries"="High income countries",
-                "High"="High income countries",
-                "Mid-, low- income"="Mid-, low- income",
-                "Mid/low income"="Mid-, low- income")),
+       keep=c("High", "ML"), ref="ML",
+       levels=c(High="High income countries",
+                ML="Mid-, low- income")),
 
   list(var="Location_US",           type="cat", label="US vs Non-US", ref="Other",
        levels=c(Other="Non-US", US="US")),
 
-  list(var="Trajectory_analysis",   type="cat", label="LGMM vs LCGA",
+  list(var="Trajectory_analysis",   type="cat", label="LGMM vs LCGA", ref="LCGA",
        levels=c(LCGA="LCGA", LGMM="LGMM")),
 
   list(var="Scale_moderator",        type="cat", label="PTSD symptom assessment",
@@ -200,18 +199,20 @@ MOD_SPECS <- list(
        keep=c("Inter","Non"), ref="Inter",
        levels=c(Inter="Interpersonal trauma", Non="Non-interpersonal trauma")),
 
-  list(
+  llist(
     var="Trauma_type",
     type="cat",
-    label="Trauma nature",
-    keep=c("Combat","Natural","Injury"), 
-    ref="Combat",
+    label="Trauma type",
+    keep=c("Combat","Natural","Injury", "HP/first responder"), 
+    ref="Injury",
     levels=c(
       Combat      = "Combat",
       Injury      = "Injury",
-      Natural     = "Natural disaster",
-      "Natural "  = "Natural disaster"   # map trailing-space version
-    )
+      Natural     = "Natural Disaster",
+      "Natural "  = "Natural Disaster",   # map trailing-space version
+      "HP/first responder" = "HP or First Responder"
+    ),
+    na_level = "Other"
   ),
 
   list(var="Military",              type="cat", label="Civilian vs Military", ref="No",
@@ -219,11 +220,7 @@ MOD_SPECS <- list(
 
   list(var="Discrete",              type="cat", label="Discrete vs non-discrete trauma",
        keep=c("No","Yes"), ref="No",
-       levels=c(No="Non-discrete", Yes="Discrete")),
-
-  list(var="Health_First",          type="cat", label="HP/First responders vs other",
-       keep=c("Yes","No"), ref="Yes",
-       levels=c(Yes="HP/First responder", No="Other"))
+       levels=c(No="Non-discrete", Yes="Discrete"))
 )
 
 MOD_LABELS <- purrr::map_chr(MOD_SPECS, "label") |>
@@ -2276,6 +2273,7 @@ big_gt <- df_big_wide %>%
 big_gt
 ```
 ---
+
 
 
 
