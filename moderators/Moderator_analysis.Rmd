@@ -1255,22 +1255,36 @@ fit_brms_models_mi <- function(df,
     sapply(df[, model_vars, drop = FALSE], function(x) any(is.na(x)))
   ]
   
-  # continuous vars are MI-eligible in brms
-  vars_with_na <- intersect(vars_with_na_raw, cont_vars)
+  # Split missing variables by imputed type (Numeric vs. Factor)
+  # Numeric includes original continuous and the new 0/1 binary variables (Gaussian family)
+  vars_numeric_na <- vars_with_na_raw[
+    sapply(df[, vars_with_na_raw, drop = FALSE], is.numeric)
+  ]
   
-  vars_without_na <- setdiff(model_vars, vars_with_na_raw)
+  # Factor variables (Multi-level categorical, also imputed with Gaussian approximation)
+  vars_factor_na <- vars_with_na_raw[
+    sapply(df[, vars_with_na_raw, drop = FALSE], is.factor)
+  ]
   
+  vars_with_na <- c(vars_numeric_na, vars_factor_na)
+  
+  # Predictors without NAs (no imputation needed)
+  vars_without_na <- setdiff(model_vars, vars_with_na)
+  
+  # Build RHS terms for the main model (Outcome ~ Predictors)
   rhs_terms <- c(
     if (length(vars_with_na)) paste0("mi(", vars_with_na, ")"),
-    vars_without_na
+    setdiff(vars_without_na, "Study") 
   )
   
+  # Main formula for the outcome (binomial GLMM)
   main_formula <- bf(
-    as.formula(
+    stats::as.formula(
       paste0(
         success_col_name,
         " | trials(Sample_Size) ~ ",
-        paste(rhs_terms, collapse = " + ")
+        paste(rhs_terms, collapse = " + "),
+        " + (1|Study)" 
       )
     ),
     family = binomial(link = "logit")
@@ -1278,13 +1292,13 @@ fit_brms_models_mi <- function(df,
   
   # Case 1: no MI → simple model
   if (length(vars_with_na) == 0L) {
-    default_priors <- get_prior(formula = main_formula, data = df)
+    default_priors <- brms::get_prior(formula = main_formula, data = df) 
     fit <- do.call(
-      brm,
+      brms::brm,
       c(
         list(
           formula = main_formula,
-          data    = df,
+          data    = df, 
           prior   = default_priors
         ),
         brms_args
@@ -2291,6 +2305,7 @@ big_gt <- df_big_wide %>%
 big_gt
 ```
 ---
+
 
 
 
