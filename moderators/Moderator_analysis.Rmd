@@ -1151,16 +1151,23 @@ prepare_data_brms <- function(df, mod_specs = MOD_SPECS, exclude = NULL) {
 The Bayesian models are implemented using the brms package, which provides flexible model specification and seamless integration of missing-data imputation via the mi() syntax. The chosen sampling settings balance computational feasibility with the need for stable posterior estimates.
 
 ```{r BRMS-setup}
+# Use all cores for parallel chains
+options(mc.cores = parallel::detectCores())
 brms_args <- list(
-  family    = binomial(link = "logit"),
-  chains    = 2,
-  iter      = 3000,
-  warmup    = 1000,
-  cores     = 8,
-  seed      = 1,
-  backend   = "cmdstanr",
-  refresh   = 0,
-  control   = list(adapt_delta = .999)
+  family  = binomial(link = "logit"),
+  chains  = 4,
+  iter    = 2000,
+  warmup  = 300,
+  cores   = 4,
+  seed    = 1,
+  backend = "cmdstanr",
+  refresh = 0,
+  control = list(
+    adapt_delta   = 0.99
+  ),
+  stan_model_args = list(
+  cpp_options = list(CXXFLAGS = "-O3")
+  )
 )
 ```
 
@@ -2266,6 +2273,7 @@ big_gt <- df_big_wide %>%
 big_gt
 ```
 ---
+
 
 
 
