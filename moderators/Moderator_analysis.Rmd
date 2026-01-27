@@ -142,7 +142,7 @@ background_vars <- c(
   )
 
 trauma_vars <- c(
-  "Discrete", "Health_First", "Trauma_type", "Military", "Occupational_trauma", "Trauma_exposure"
+  "Discrete", "Trauma_type", "Military", "Occupational_trauma", "Trauma_exposure"
   )
 
 method_vars <- c(
@@ -2276,6 +2276,7 @@ big_gt <- df_big_wide %>%
 big_gt
 ```
 ---
+
 
 
 
