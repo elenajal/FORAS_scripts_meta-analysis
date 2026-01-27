@@ -969,6 +969,17 @@ Due to high collinearity, the variable "Time span of the study (months)" (a.k.a.
 Before fitting multivariate models, the data are prepared for Bayesian estimation and missing-data imputation. Continuous moderators are standardised to place them on a comparable scale, and categorical variables are recoded to ensure proper factor structure. This preparation ensures stable estimation and interpretable coefficients in the multivariate analyses.
 
 ```{r BRMS-data-prep}
+# Differentiate between categorical and continuous variables
+cont_vars <- purrr::map_chr(
+  purrr::keep(MOD_SPECS, ~ .x$type == "cont"),
+  "var"
+)
+
+cat_vars <- purrr::map_chr(
+  purrr::keep(MOD_SPECS, ~ .x$type == "cat"),
+  "var"
+)
+
 # Function to apply model specifications to a data frame
 apply_mod_specs <- function(df, mod_specs) {
   
@@ -2266,6 +2277,7 @@ big_gt <- df_big_wide %>%
 big_gt
 ```
 ---
+
 
 
 
