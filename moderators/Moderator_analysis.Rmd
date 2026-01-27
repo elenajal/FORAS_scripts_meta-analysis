@@ -1116,48 +1116,48 @@ prepare_data_brms <- function(df, mod_specs = MOD_SPECS, exclude = NULL) {
   cont_vars_in_df <- intersect(cont_vars, names(df))
   cat_vars_in_df  <- intersect(cat_vars,  names(df))
   
-  # Apply all variable specifications
+  # Apply all variable specifications (recode, filter, set ref level)
   df <- apply_mod_specs(df, mod_specs)
   
   # Scale continuous variables
-  if (length(cont_vars_in_df) > 0L) {
+  if (length(cont_vars_in_df) > 0) {
     df <- df %>%
       dplyr::mutate(
         dplyr::across(
           dplyr::all_of(cont_vars_in_df),
-          ~ {
-            v <- .
-            
-            v_num <- suppressWarnings(as.numeric(v))
-            
-            # Warning check
-            if (all(is.na(v_num)) && any(!is.na(v))) {
-              warning("After coercion, variable '", dplyr::cur_column(),
-                      "' is all NA; scaling will return all NA.")
-            }
-            
-            # Center and scale
-            as.numeric(scale(v_num))
-          }
+          ~ as.numeric(scale(suppressWarnings(as.numeric(.))))
         )
       )
   }
   
-  # Ensure categorical variables are factors
-  if (length(cat_vars_in_df) > 0L) {
+  #  Convert binary factors to 0/1 numeric
+  binary_vars_to_encode <- intersect(get_binary_cat_vars(df, cat_vars_in_df), names(df))
+  
+  if (length(binary_vars_to_encode) > 0) {
     df <- df %>%
       dplyr::mutate(
         dplyr::across(
-          dplyr::all_of(cat_vars_in_df),
+          dplyr::all_of(binary_vars_to_encode),
+          ~ factor_to_01(.) # Converts two-level factor to 0/1 numeric
+        )
+      )
+  }
+  # Ensure all other categorical variables are factors
+  non_binary_cat_vars <- setdiff(cat_vars_in_df, binary_vars_to_encode)
+  if (length(non_binary_cat_vars) > 0) {
+    df <- df %>%
+      dplyr::mutate(
+        dplyr::across(
+          dplyr::all_of(non_binary_cat_vars),
           ~ factor(.)
         )
       )
   }
   
-  # Drop unused levels
+  # Drop unused levels only for the remaining factors (non-binary)
   df <- droplevels(df)
   
-  df
+  return(df)
 }
 ```
 
@@ -2281,6 +2281,7 @@ big_gt <- df_big_wide %>%
 big_gt
 ```
 ---
+
 
 
 
