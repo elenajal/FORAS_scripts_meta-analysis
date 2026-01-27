@@ -1349,7 +1349,7 @@ Predictors whose credible intervals exclude zero are flagged as potentially impo
 
 Model diagnostics summarise convergence metrics such as R-hat and effective sample sizes. These indicators ensure that posterior estimates are reliable and that inferences from the multivariate models can be trusted.
 
-Finally, the multivariate models are compared using leave-one-out cross-validation (LOO-CV). This provides an estimate of the relative predictive accuracy of the three model specifications and helps assess whether additional moderator domains improve the overall model fit for each trajectory. LOO-CV ranks models by how well they predict unseen data using ELPD, where higher ELPD values indicate better predictive accuracy. The best model has ΔELPD = 0, and other models have more negative ΔELPD values the worse they perform, with the SE showing how confidently we can distinguish those differences. Optional model weights summarize each model’s relative predictive support, where higher weights signal a model that is more likely to generalize well to new data.
+Finally, the multivariate models are compared using leave-one-out cross-validation (LOO-CV). This provides an estimate of the relative predictive accuracy of the three model specifications and helps assess whether additional moderator domains improve the overall model fit for each trajectory. LOO-CV ranks models by how well they predict unseen data using ELPD, where higher ELPD values indicate better predictive accuracy. The best model has ΔELPD = 0, and other models have more negative ΔELPD values the worse they perform, with the SE showing how confidently we can distinguish those differences. Model weights summarize each model’s relative predictive support, where higher weights signal a model that is more likely to generalize well to new data.
 
 ```{r BRMS-gt-table}
 # Predictor Summary Table Function
@@ -2266,6 +2266,7 @@ big_gt <- df_big_wide %>%
 big_gt
 ```
 ---
+
 
 
 
