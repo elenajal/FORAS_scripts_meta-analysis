@@ -270,107 +270,283 @@ LEVEL_MAP <- purrr::map_dfr(MOD_SPECS, \(spec) {
 
 ```
 
-Below we present a summary of all moderators included in the analysis, describing whether they are continuous or categorical, as well as main descriptives concerning the variables.
+Below we present a summary of all moderators included in the analysis, across the full dataset, as well as trajectory specific. The table presents overall descriptive statistics for each moderator variable and compares how these moderators are distributed across the five identified trajectory classes (Low, Decreasing, Increasing, High, and Moderate). Continuous moderators are summarized using the mean, standard deviation, and observed range. Categorical moderators show the proportion of studies falling into each category overall and within each trajectory class. Moderators are grouped into background characteristics, trauma characteristics, and methodological characteristics to facilitate interpretation.
 
 ```{r moderator-summary-gt, message=FALSE}
-mod_df <- tibble::tibble(
-  var    = purrr::map_chr(MOD_SPECS, "var"),
-  type   = purrr::map_chr(MOD_SPECS, "type"),
-  label  = purrr::map_chr(MOD_SPECS, "label"),
-  keep   = purrr::map(MOD_SPECS, "keep"),
-  levels = purrr::map(MOD_SPECS, "levels")
-)
+make_combined_mod_table <- function(df_mod,
+                                    MOD_SPECS,
+                                    LEVEL_MAP,
+                                    background_vars = NULL,
+                                    trauma_vars     = NULL,
+                                    method_vars     = NULL) {
 
-cont_vars <- mod_df %>% filter(type == "cont") %>% pull(var)
-cat_vars  <- mod_df %>% filter(type == "cat")  %>% pull(var)
+  trajectory_cols <- c("Low","Decreasing","Increasing","High","Moderate")
 
-#  Continuous summaries
-cont_summary <- df_moderation %>%
-  select(any_of(cont_vars)) %>%
-  pivot_longer(everything(), names_to = "var", values_to = "value") %>%
-  group_by(var) %>%
-  summarise(
-    Mean = mean(value, na.rm = TRUE),
-    SD   = sd(value, na.rm = TRUE),
-    Min  = min(value, na.rm = TRUE),
-    Max  = max(value, na.rm = TRUE),
-    Summary = glue("{round(Mean,2)} (SD = {round(SD,2)}), {round(Min,2)}–{round(Max,2)}"),
-    .groups = "drop"
-  ) %>%
-  left_join(mod_df, by = "var") %>%
-  transmute(
-    Variable = label,
-    Type = "Continuous",
-    Summary
+  # 0. Make sure trajectory columns are 0/1 numerics
+  for (traj in trajectory_cols) {
+    if (traj %in% names(df_mod)) {
+      df_mod[[traj]] <- as.numeric(df_mod[[traj]] %in% c(1, "1", TRUE, "TRUE"))
+      df_mod[[traj]][is.na(df_mod[[traj]])] <- 0
+    }
+  }
+
+  # 1. Clean LEVEL_MAP
+  LEVEL_MAP <- LEVEL_MAP %>%
+    mutate(orig = trimws(orig)) %>%
+    distinct(moderator, pretty, .keep_all = TRUE)
+
+  # 2. assign group (Background / Trauma / Method / Other)
+  get_group <- function(var) {
+    if (!is.null(background_vars) && var %in% background_vars) {
+      "Background characteristics"
+    } else if (!is.null(trauma_vars) && var %in% trauma_vars) {
+      "Trauma characteristics"
+    } else if (!is.null(method_vars) && var %in% method_vars) {
+      "Methodological characteristics"
+    } else {
+      "Other"
+    }
+  }
+
+  # 3. recode a categorical moderator to pretty labels
+  recode_categorical <- function(x_raw, spec, spec_map) {
+
+    x <- x_raw
+
+    # restrict to 'keep' values if specified
+    if (!is.null(spec$keep)) {
+      x[!(x %in% spec$keep)] <- NA
+    }
+
+    x <- trimws(as.character(x))
+
+    non_na_map <- spec_map %>% filter(!is.na(orig))
+    na_map     <- spec_map %>% filter(is.na(orig))
+
+    if (nrow(non_na_map) > 0) {
+      recode_map <- setNames(non_na_map$pretty, non_na_map$orig)
+      x <- dplyr::recode(x, !!!recode_map, .default = NA_character_)
+    } else {
+      x <- as.character(x)
+    }
+
+    if (nrow(na_map) >= 1) {
+      x[is.na(x)] <- na_map$pretty[1]
+    }
+
+    x
+  }
+
+  # 4. OVERALL SUMMARIES
+  overall_rows <- map_dfr(MOD_SPECS, function(spec) {
+
+    var   <- spec$var
+    label <- spec$label
+    type  <- spec$type
+    x_raw <- df_mod[[var]]
+    group <- get_group(var)
+
+    if (type == "cont") {
+
+      Mean <- mean(x_raw, na.rm = TRUE)
+      SD   <- sd(x_raw, na.rm = TRUE)
+      Min  <- min(x_raw, na.rm = TRUE)
+      Max  <- max(x_raw, na.rm = TRUE)
+
+      tibble(
+        Group          = group,
+        Moderator      = label,
+        Type           = "Continuous",
+        Level          = "",
+        OverallSummary = glue("{round(Mean, 2)} (SD = {round(SD, 2)}), {round(Min, 2)}–{round(Max, 2)}")
+      )
+
+    } else {
+
+      spec_map <- LEVEL_MAP %>% filter(moderator == var)
+
+      # recode to pretty labels
+      x_rec <- recode_categorical(x_raw, spec, spec_map)
+
+      # full list of level labels (pretty)
+      all_levels <- tibble(Level = spec_map$pretty)
+
+      tab_df <- tibble(Level = x_rec) %>%
+        filter(!is.na(Level)) %>%
+        count(Level, name = "N") %>%
+        mutate(P = N / sum(N))
+
+      full_df <- all_levels %>%
+        left_join(tab_df, by = "Level") %>%
+        mutate(
+          N = replace_na(N, 0L),
+          P = replace_na(P, 0),
+          OverallSummary = sprintf("%d (%.1f%%)", N, P * 100)
+        )
+
+      tibble(
+        Group          = group,
+        Moderator      = label,
+        Type           = "Categorical",
+        Level          = full_df$Level,
+        OverallSummary = full_df$OverallSummary
+      )
+    }
+  })
+
+  # 5. TRAJECTORY SUMMARIES
+  traj_rows <- map_dfr(MOD_SPECS, function(spec) {
+
+    var   <- spec$var
+    label <- spec$label
+    type  <- spec$type
+
+    if (type == "cont") {
+
+      mean_vals <- sapply(trajectory_cols, function(traj) {
+        vals <- df_mod[[var]][df_mod[[traj]] == 1]
+        mean(vals, na.rm = TRUE)
+      })
+
+      sd_vals <- sapply(trajectory_cols, function(traj) {
+        vals <- df_mod[[var]][df_mod[[traj]] == 1]
+        sd(vals, na.rm = TRUE)
+      })
+
+      formatted <- mapply(
+        function(m, s) {
+          if (is.na(m)) return("–")
+          glue("{round(m, 1)} (SD = {round(s, 1)})")
+        },
+        mean_vals, sd_vals
+      )
+
+      tibble(
+        Moderator = label,
+        Level     = "",
+        !!!setNames(as.list(formatted), trajectory_cols)
+      )
+
+    } else {
+
+      spec_map <- LEVEL_MAP %>% filter(moderator == var)
+      x_rec    <- recode_categorical(df_mod[[var]], spec, spec_map)
+
+      map_dfr(spec_map$pretty, function(lev_pretty) {
+
+        level_idx <- x_rec == lev_pretty
+
+        row_vals <- sapply(trajectory_cols, function(traj) {
+
+          traj_idx   <- df_mod[[traj]] == 1
+          numerator  <- sum(level_idx & traj_idx, na.rm = TRUE)
+          denominator <- sum(traj_idx, na.rm = TRUE)
+
+          if (denominator == 0) {
+            return("–")
+          } else {
+            perc <- 100 * numerator / denominator
+            sprintf("%.1f%%", perc)
+          }
+        })
+
+        tibble(
+          Moderator = label,
+          Level     = lev_pretty,
+          !!!as.list(row_vals)
+        )
+      })
+    }
+  })
+
+  # 6. Merge overall + trajectory summaries
+  final_df <- overall_rows %>%
+    left_join(traj_rows, by = c("Moderator", "Level"))
+
+  # order groups and moderators according to MOD_SPECS
+  group_levels <- c(
+    "Background characteristics",
+    "Trauma characteristics",
+    "Methodological characteristics",
+    "Other"
   )
 
-# Categorical summaries
-cat_summary <- map_dfr(cat_vars, function(v) {
+  mod_order <- map_chr(MOD_SPECS, "label")
 
-  spec <- mod_df %>% filter(var == v) %>% slice(1)
+  final_df <- final_df %>%
+    mutate(
+      Group = factor(Group, levels = group_levels),
+      Moderator = factor(Moderator, levels = mod_order)
+    ) %>%
+    arrange(Group, Moderator)
 
-  x <- df_moderation[[v]]
-  if (all(is.na(x))) return(NULL)
-
-  # Recode
-  if (!is.null(spec$levels[[1]])) {
-    x <- recode(as.character(x), !!!spec$levels[[1]])
-  }
-
-  # Apply KEEP filter
-  if (!is.null(spec$keep[[1]])) {
-    x <- x[x %in% spec$keep[[1]]]
-    if (length(x) == 0) return(NULL)
-  }
-
-  tab  <- table(x)
-  prop <- prop.table(tab)
-
-  tibble(
-    Variable = spec$label,
-    Type     = "Categorical",
-    Summary  = paste0(
-      names(tab), ": ",
-      as.integer(tab), " (", round(100 * as.numeric(prop), 1), "%)",
-      collapse = "; "
+  # 7. Render GT table
+  gt(final_df, groupname_col = "Group") %>%
+    cols_label(
+      Moderator      = md("**Moderator**"),
+      Type           = md("**Type**"),
+      Level          = md("**Level**"),
+      OverallSummary = md("**Overall Summary**"),
+      Low            = md("**Low**"),
+      Decreasing     = md("**Decreasing**"),
+      Increasing     = md("**Increasing**"),
+      High           = md("**High**"),
+      Moderate       = md("**Moderate**")
+    ) %>%
+    cols_align(
+      align = "left",
+      columns = c(Moderator, Type, Level, OverallSummary)
+    ) %>%
+    cols_align(
+      align = "right",
+      columns = trajectory_cols
+    ) %>%
+    tab_spanner(
+      label   = "Trajectory distributions (% within trajectory)",
+      columns = trajectory_cols
+    ) %>%
+    tab_header(
+      title = md("**Moderator Summary with Trajectory Distributions**"),
+      subtitle = "Categorical moderators show % within each trajectory; continuous moderators show mean (SD)"
+    ) %>%
+    opt_row_striping() %>%
+    cols_hide(Group) %>%
+    tab_options(
+      table.font.size              = 14,
+      table.font.names             = "Times New Roman",
+      column_labels.background.color = "#f0f0f0",
+      column_labels.font.weight    = "bold",
+      data_row.padding             = px(4),
+      table.width                  = pct(100)
+    ) %>%
+    opt_table_lines() %>%
+    # Bold the first occurrence of each moderator
+    tab_style(
+      style = cell_text(weight = "bold"),
+      locations = cells_body(
+        columns = Moderator,
+        rows = !duplicated(Moderator)
+      )
+    ) %>%
+    # Blank repeated moderator names for cleaner look
+    text_transform(
+      locations = cells_body(columns = Moderator),
+      fn = function(x) {
+        x[duplicated(x)] <- ""
+        x
+      }
     )
-  )
-})
+}
 
-
-combined_table <- bind_rows(cont_summary, cat_summary)
-
-# GT rendering
-gt_summary <- combined_table %>%
-  gt() %>%
-  tab_header(
-    title = md("**Moderator Descriptive Summary**"),
-    subtitle = "Continuous moderators: Mean (SD), Min–Max; Categorical moderators: n (%)"
-  ) %>%
-  cols_label(
-    Variable = md("**Moderator**"),
-    Type     = md("**Type**"),
-    Summary  = md("**Summary**")
-  ) %>%
-  cols_align(
-    align = "left",
-    columns = c(Variable, Summary)
-  ) %>%
-  cols_align(
-    align = "center",
-    columns = Type
-  ) %>%
-  tab_options(
-    table.font.size = 14,
-    data_row.padding = px(4),
-    table.width = pct(100),
-    column_labels.background.color = "#f0f0f0",
-    column_labels.font.weight = "bold",
-    table.font.names = "Times New Roman"
-  ) %>%
-  opt_table_lines()   # nice simple borders
-
-gt_summary
+summary_tbl <- make_combined_mod_table(
+  df_moderation,
+  MOD_SPECS,
+  LEVEL_MAP,
+  background_vars = background_vars,
+  trauma_vars     = trauma_vars,
+  method_vars     = method_vars
+)
+summary_tbl
 ```
 
 # Model 1: Univariate GLMMs 
@@ -939,19 +1115,25 @@ generate_correlation_gt <- function(df,
         exclude_vars <- unique(high_cor_df$drop_var)
       }
             
-      # Print warning message
-      cat("\n")
-      cat("--- Warning: Highly Correlated Variables (Correlation > 0.90) ---\n")
+      # warning: dropped variables
+    if (length(exclude_vars) > 0) {
+    
+      dropped_pretty <- MOD_LABELS[exclude_vars]
+    
+      cat("<hr>")
+      cat("<br><strong>Warning: Highly Correlated Variables Removed</strong><br>")
       cat(
         paste0(
-          "The following variables have a correlation greater than 0.90 and ",
-          "will be candidates for **exclusion** from the analysis for the '", 
-          trajectory, "' trajectory."
+          "The following continuous predictors were dropped due to high correlation ",
+          "(|r| > 0.90) based on their weaker association with the outcome ",
+          "for the <em>", trajectory, "</em> trajectory:<br><br>",
+          "<em>",
+          paste(dropped_pretty, collapse = ", "),
+          "</em><br><br>"
         )
       )
-      
-      cat("\nHigh-correlation resolution (dropping only one per pair):\n")
-      print(high_cor_df[, c("Var1", "Var2", "drop_var", "keep_var")])
+    
+    }
       
     } else {
       cat("\n--- No variable pairs found with correlation > 0.90. ---\n\n")
@@ -981,7 +1163,7 @@ generate_correlation_gt <- function(df,
     gt::fmt_number(columns = gt::everything(), decimals = 2) %>%
     gt::data_color(
       columns = gt::everything(),
-      colors = scales::col_numeric(
+      fn = scales::col_numeric(
         palette = c("red", "white", "red"),
         domain = c(-1, 1)
       )
@@ -999,12 +1181,24 @@ correlations_df
 ```
 
 Due to high collinearity, the variable "Time span of the study (months)" (a.k.a. TP1-TPX) will be excluded from all analyses for this Bayesian model. Trajectory-specific correlation matrices are provided in the corresponding sections of this model and variables that have a correlation index of > .90 are excluded from the analyses. 
+Further, to account for data sparcity and high overlap, some categorical variables will be combined/omitted from the analysis. Due to high overlap between the variable "Military" and the level "Combat" of the variable "Trauma type", the variable "Military" will also be excluded from all analyses for this Bayesian model.
 
 ## Data Preperation for BRMS
 
 Before fitting multivariate models, the data are prepared for Bayesian estimation and missing-data imputation. Continuous moderators are standardised to place them on a comparable scale, and categorical variables are recoded to ensure proper factor structure. This preparation ensures stable estimation and interpretable coefficients in the multivariate analyses.
 
 ```{r BRMS-data-prep}
+# Differentiate between categorical and continuous variables
+cont_vars <- purrr::map_chr(
+  purrr::keep(MOD_SPECS, ~ .x$type == "cont"),
+  "var"
+)
+
+cat_vars <- purrr::map_chr(
+  purrr::keep(MOD_SPECS, ~ .x$type == "cat"),
+  "var"
+)
+
 # Function to apply model specifications to a data frame
 apply_mod_specs <- function(df, mod_specs) {
   
@@ -1080,7 +1274,11 @@ apply_mod_specs <- function(df, mod_specs) {
         x[!(x %in% keep_labels)] <- NA
       }
       
-      
+      # Handle missing values (NA) by mapping them to the na_level string
+      if (!is.null(spec$na_level)) {
+        x[is.na(x)] <- spec$na_level
+      }
+
       # Convert to factor
       x <- factor(x)
       levels(x) <- trimws(levels(x))
@@ -1137,48 +1335,48 @@ prepare_data_brms <- function(df, mod_specs = MOD_SPECS, exclude = NULL) {
   cont_vars_in_df <- intersect(cont_vars, names(df))
   cat_vars_in_df  <- intersect(cat_vars,  names(df))
   
-  # Apply all variable specifications
+  # Apply all variable specifications (recode, filter, set ref level)
   df <- apply_mod_specs(df, mod_specs)
   
   # Scale continuous variables
-  if (length(cont_vars_in_df) > 0L) {
+  if (length(cont_vars_in_df) > 0) {
     df <- df %>%
       dplyr::mutate(
         dplyr::across(
           dplyr::all_of(cont_vars_in_df),
-          ~ {
-            v <- .
-            
-            v_num <- suppressWarnings(as.numeric(v))
-            
-            # Warning check
-            if (all(is.na(v_num)) && any(!is.na(v))) {
-              warning("After coercion, variable '", dplyr::cur_column(),
-                      "' is all NA; scaling will return all NA.")
-            }
-            
-            # Center and scale
-            as.numeric(scale(v_num))
-          }
+          ~ as.numeric(scale(suppressWarnings(as.numeric(.))))
         )
       )
   }
   
-  # Ensure categorical variables are factors
-  if (length(cat_vars_in_df) > 0L) {
+  #  Convert binary factors to 0/1 numeric
+  binary_vars_to_encode <- intersect(get_binary_cat_vars(df, cat_vars_in_df), names(df))
+  
+  if (length(binary_vars_to_encode) > 0) {
     df <- df %>%
       dplyr::mutate(
         dplyr::across(
-          dplyr::all_of(cat_vars_in_df),
+          dplyr::all_of(binary_vars_to_encode),
+          ~ factor_to_01(.) # Converts two-level factor to 0/1 numeric
+        )
+      )
+  }
+  # Ensure all other categorical variables are factors
+  non_binary_cat_vars <- setdiff(cat_vars_in_df, binary_vars_to_encode)
+  if (length(non_binary_cat_vars) > 0) {
+    df <- df %>%
+      dplyr::mutate(
+        dplyr::across(
+          dplyr::all_of(non_binary_cat_vars),
           ~ factor(.)
         )
       )
   }
   
-  # Drop unused levels
+  # Drop unused levels only for the remaining factors (non-binary)
   df <- droplevels(df)
   
-  df
+  return(df)
 }
 ```
 
