@@ -41,10 +41,6 @@ library(rlang)
 # load data
 df_moderation <- read.csv2("../pre-processing/output/data_for_moderation_analyses.csv", dec = ".")
 
-# calculate Sample_Size_100
-df_moderation <- df_moderation %>%
-  mutate(Sample_Size_100 = Sample_Size / 100)
-
 # Display the first rows to check the data
 head(df_moderation)
 ```
@@ -54,6 +50,20 @@ head(df_moderation)
 To analyse each symptom trajectory separately, we generate dedicated datasets in which the corresponding trajectory count and sample information are explicitly available. This step does not change the underlying data but clarifies the structure for later regression analyses and descriptive summaries. Each trajectory dataset also provides basic information about the total number of individuals and the number of contributing samples, grounding the modelling in a clear empirical context.
 
 ```{r trajectories}
+# calculate Sample_Size_100
+df_moderation <- df_moderation %>%
+  mutate(Sample_Size_100 = Sample_Size / 100)
+
+# correct labeling error
+df_moderation$Health_First[df_moderation$MID == "M1356_2"] <- "No"
+
+# add level "HP/first responder" to dataset
+df_moderation <- df_moderation %>%
+  mutate(Trauma_type = case_when(
+    Health_First == "Yes" ~ "HP/first responder",
+    TRUE ~ as.character(Trauma_type)
+  ))
+
 trajectory_setup <- function(df, traj) {
   
   # Column names
@@ -121,7 +131,7 @@ The analyses examine a broad set of potential moderators that may explain differ
 Country income (Levels: High income countries; Mid-, low-income); Developmental age (Levels: Adult, Youth); Education (%); Having a partner (%); Mean age; Minorities (%); Percentage of women; US vs Non-US (Levels: Non-US, US)
 
 **Trauma-related variables**
-Civilian vs Military (Levels: Civilian, Military); Discrete vs non-discrete trauma (Levels: Non-discrete, Discrete); HP/First responder vs other (Levels: HP/First responder, Other); Occupational trauma (Levels: No, Yes); Trauma exposure (Levels: Interpersonal trauma, Non-interpersonal trauma); Trauma nature (Levels: Combat, Injury, Natural disaster)
+Civilian vs Military (Levels: Civilian, Military); Discrete vs non-discrete trauma (Levels: Non-discrete, Discrete); HP/First responder vs other (Levels: HP/First responder, Other); Occupational trauma (Levels: No, Yes); Trauma exposure (Levels: Interpersonal trauma, Non-interpersonal trauma); Trauma type (Levels: Combat, Injury, Natural disaster, HP/first responder, Other)
 
 **Methodological variables**
 Diagnostic Criteria (Levels: DSM-IV, DSM-5); Entropy; LGMM vs LCGA (Levels: LCGA, LGMM); Number of trajectories; PTSD symptom assessment (Levels: Interview, Self-reported scale); Quality score; Sample size / 100; Time between trauma and first assessment (months); Time between trauma and last assessment (months); Time point PTSD assessments (number); Time span of the study (months)
@@ -132,7 +142,7 @@ background_vars <- c(
   )
 
 trauma_vars <- c(
-  "Discrete", "Health_First", "Trauma_type", "Military", "Occupational_trauma", "Trauma_exposure"
+  "Discrete", "Trauma_type", "Military", "Occupational_trauma", "Trauma_exposure"
   )
 
 method_vars <- c(
@@ -171,15 +181,14 @@ MOD_SPECS <- list(
        levels=c(Adult="Adult", Youth="Youth")),
 
   list(var="Location",              type="cat", label="Country income",
-       levels=c("High income countries"="High income countries",
-                "High"="High income countries",
-                "Mid-, low- income"="Mid-, low- income",
-                "Mid/low income"="Mid-, low- income")),
+       keep=c("High", "ML"), ref="ML",
+       levels=c(High="High income countries",
+                ML="Mid-, low- income")),
 
   list(var="Location_US",           type="cat", label="US vs Non-US", ref="Other",
        levels=c(Other="Non-US", US="US")),
 
-  list(var="Trajectory_analysis",   type="cat", label="LGMM vs LCGA",
+  list(var="Trajectory_analysis",   type="cat", label="LGMM vs LCGA", ref="LCGA",
        levels=c(LCGA="LCGA", LGMM="LGMM")),
 
   list(var="Scale_moderator",        type="cat", label="PTSD symptom assessment",
@@ -190,18 +199,20 @@ MOD_SPECS <- list(
        keep=c("Inter","Non"), ref="Inter",
        levels=c(Inter="Interpersonal trauma", Non="Non-interpersonal trauma")),
 
-  list(
+  llist(
     var="Trauma_type",
     type="cat",
-    label="Trauma nature",
-    keep=c("Combat","Natural","Injury"), 
-    ref="Combat",
+    label="Trauma type",
+    keep=c("Combat","Natural","Injury", "HP/first responder"), 
+    ref="Injury",
     levels=c(
       Combat      = "Combat",
       Injury      = "Injury",
-      Natural     = "Natural disaster",
-      "Natural "  = "Natural disaster"   # map trailing-space version
-    )
+      Natural     = "Natural Disaster",
+      "Natural "  = "Natural Disaster",   # map trailing-space version
+      "HP/first responder" = "HP or First Responder"
+    ),
+    na_level = "Other"
   ),
 
   list(var="Military",              type="cat", label="Civilian vs Military", ref="No",
@@ -209,11 +220,7 @@ MOD_SPECS <- list(
 
   list(var="Discrete",              type="cat", label="Discrete vs non-discrete trauma",
        keep=c("No","Yes"), ref="No",
-       levels=c(No="Non-discrete", Yes="Discrete")),
-
-  list(var="Health_First",          type="cat", label="HP/First responders vs other",
-       keep=c("Yes","No"), ref="Yes",
-       levels=c(Yes="HP/First responder", No="Other"))
+       levels=c(No="Non-discrete", Yes="Discrete"))
 )
 
 MOD_LABELS <- purrr::map_chr(MOD_SPECS, "label") |>
@@ -223,13 +230,42 @@ CAT_SPECS <- MOD_SPECS[sapply(MOD_SPECS, `[[`, "type") == "cat"]
 names(CAT_SPECS) <- sapply(CAT_SPECS, `[[`, "var")
 
 LEVEL_MAP <- purrr::map_dfr(MOD_SPECS, \(spec) {
-  if (is.null(spec$levels)) return(NULL)
-  tibble::tibble(
-    moderator = spec$var,
-    orig      = names(spec$levels),
-    pretty    = unname(spec$levels),
-    stan      = gsub("[^A-Za-z0-9]", "", names(spec$levels))
+  
+  # Initialize the level data frame
+  df_levels <- tibble::tibble(
+    moderator = character(),
+    orig      = character(),
+    pretty    = character(),
+    stan      = character()
   )
+  
+  # 1. Handle explicit levels
+  if (!is.null(spec$levels)) {
+    df_levels <- tibble::tibble(
+      moderator = spec$var,
+      orig      = names(spec$levels),
+      pretty    = unname(spec$levels)
+    )
+  }
+  
+  # 2. Handle na_level (missing values)
+  if (!is.null(spec$na_level)) {
+    # map NA (the original missing value) to the pretty na_level.
+    df_na <- tibble::tibble(
+      moderator = spec$var,
+      orig      = NA_character_, 
+      pretty    = spec$na_level
+    )
+    df_levels <- dplyr::bind_rows(df_levels, df_na)
+  }
+  
+  if (nrow(df_levels) == 0) return(NULL)
+  
+  # Add the 'stan' cleaned version
+  df_levels <- df_levels %>%
+    dplyr::mutate(stan = gsub("[^A-Za-z0-9]", "", pretty))
+  
+  return(df_levels)
 })
 
 ```

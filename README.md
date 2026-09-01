@@ -2,12 +2,14 @@
 
 # Overview
 
-This repository is part of the **Hunt for the Last Relevant Paper** project,
-pre-registered  as "[Trajectories of PTSD Following Traumatic Events: A Systematic and Multi-database Review](https://www.crd.york.ac.uk/prospero/display_record.php?RecordID=494027)".
+This repository is part of the **FORAS project (Framework for PTSS trajectORies: Analysis and Synthesis)**, a comprehensive initiative blending human expertise and AI for systematic literature screening.  
+It contains all statistical analysis code relevant to the following manuscript: Coimbra et al.,  PTSD Symptom Trajectories in the Wake of Potentially Traumatic Events: A Systematic Review and Meta-Analysis of 20 Years of Research, accepted for publication in Clinical Psychological Science [doi to follow]. 
 
-The current repository is focusing on the scripts used for the meta-analysis (Pre-print: https://doi.org/10.31219/osf.io/fkjb2_v1).
+**Preprint**: The most recent preprint is available on OSF (osf.io/preprints/osf/fkjb2_v3). 
 
-Data for the analyses are available on DataverseNL: https://doi.org/10.34894/XVYG52
+It is pre-registered  as "[Trajectories of PTSD Following Traumatic Events: A Systematic and Multi-database Review](https://www.crd.york.ac.uk/prospero/display_record.php?RecordID=494027)".
+
+Data for the analyses (including an overview of the chronological FORAS project's structure, its search lineage, and associated publications, leading up to the above-mentioned publication and dataset) are available on DataverseNL: https://doi.org/10.34894/XVYG52
 
 # Contents
 
