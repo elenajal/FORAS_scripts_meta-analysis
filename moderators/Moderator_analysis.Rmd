@@ -1385,16 +1385,23 @@ prepare_data_brms <- function(df, mod_specs = MOD_SPECS, exclude = NULL) {
 The Bayesian models are implemented using the brms package, which provides flexible model specification and seamless integration of missing-data imputation via the mi() syntax. The chosen sampling settings balance computational feasibility with the need for stable posterior estimates.
 
 ```{r BRMS-setup}
+# Use all cores for parallel chains
+options(mc.cores = parallel::detectCores())
 brms_args <- list(
-  family    = binomial(link = "logit"),
-  chains    = 2,
-  iter      = 3000,
-  warmup    = 1000,
-  cores     = 8,
-  seed      = 1,
-  backend   = "cmdstanr",
-  refresh   = 0,
-  control   = list(adapt_delta = .999)
+  family  = binomial(link = "logit"),
+  chains  = 4,
+  iter    = 2000,
+  warmup  = 300,
+  cores   = 4,
+  seed    = 1,
+  backend = "cmdstanr",
+  refresh = 0,
+  control = list(
+    adapt_delta   = 0.99
+  ),
+  stan_model_args = list(
+  cpp_options = list(CXXFLAGS = "-O3")
+  )
 )
 ```
 
@@ -1416,6 +1423,24 @@ Comparing these models helps determine whether trauma-related or methodological 
 These groups are widely the same across trajectories, but may differ slightly based on exclusions due to collinearity.
 
 ```{r BRMS-model-fitting-functions}
+get_binary_cat_vars <- function(df, cat_vars_all) {
+  binary_vars <- c()
+  for (v in intersect(cat_vars_all, names(df))) {
+    x_non_na <- df[[v]][!is.na(df[[v]])]
+    if (is.factor(x_non_na) && nlevels(x_non_na) == 2) {
+      binary_vars <- c(binary_vars, v)
+    }
+  }
+  return(binary_vars)
+}
+factor_to_01 <- function(fct_var) {
+  if (!is.factor(fct_var) || nlevels(fct_var) != 2) {
+    stop("Input must be a two-level factor.")
+  }
+  # Converts factor levels (1, 2) to (0, 1), where the reference level (1) becomes 0.
+  return(as.numeric(fct_var) - 1)
+}
+
 ## Build predictor families
 build_predictor_families <- function(df, cont_vars, cat_vars) {
   
@@ -1464,22 +1489,36 @@ fit_brms_models_mi <- function(df,
     sapply(df[, model_vars, drop = FALSE], function(x) any(is.na(x)))
   ]
   
-  # continuous vars are MI-eligible in brms
-  vars_with_na <- intersect(vars_with_na_raw, cont_vars)
+  # Split missing variables by imputed type (Numeric vs. Factor)
+  # Numeric includes original continuous and the new 0/1 binary variables (Gaussian family)
+  vars_numeric_na <- vars_with_na_raw[
+    sapply(df[, vars_with_na_raw, drop = FALSE], is.numeric)
+  ]
   
-  vars_without_na <- setdiff(model_vars, vars_with_na_raw)
+  # Factor variables (Multi-level categorical, also imputed with Gaussian approximation)
+  vars_factor_na <- vars_with_na_raw[
+    sapply(df[, vars_with_na_raw, drop = FALSE], is.factor)
+  ]
   
+  vars_with_na <- c(vars_numeric_na, vars_factor_na)
+  
+  # Predictors without NAs (no imputation needed)
+  vars_without_na <- setdiff(model_vars, vars_with_na)
+  
+  # Build RHS terms for the main model (Outcome ~ Predictors)
   rhs_terms <- c(
     if (length(vars_with_na)) paste0("mi(", vars_with_na, ")"),
-    vars_without_na
+    setdiff(vars_without_na, "Study") 
   )
   
+  # Main formula for the outcome (binomial GLMM)
   main_formula <- bf(
-    as.formula(
+    stats::as.formula(
       paste0(
         success_col_name,
         " | trials(Sample_Size) ~ ",
-        paste(rhs_terms, collapse = " + ")
+        paste(rhs_terms, collapse = " + "),
+        " + (1|Study)" 
       )
     ),
     family = binomial(link = "logit")
@@ -1487,13 +1526,13 @@ fit_brms_models_mi <- function(df,
   
   # Case 1: no MI → simple model
   if (length(vars_with_na) == 0L) {
-    default_priors <- get_prior(formula = main_formula, data = df)
+    default_priors <- brms::get_prior(formula = main_formula, data = df) 
     fit <- do.call(
-      brm,
+      brms::brm,
       c(
         list(
           formula = main_formula,
-          data    = df,
+          data    = df, 
           prior   = default_priors
         ),
         brms_args
@@ -1502,28 +1541,38 @@ fit_brms_models_mi <- function(df,
     return(fit)
   }
   
-  # Case 2: MI for continuous vars
-  mi_formulas <- lapply(vars_with_na, function(v) {
-    bf(as.formula(paste0(v, " | mi() ~ 1")), family = gaussian())
+ # Case 2: MI for Numeric (Continuous & 0/1) and Factor (Multi-level) vars
+  
+  # Imputation formulas for Numeric variables (Gaussian family)
+  mi_formulas_numeric <- lapply(vars_numeric_na, function(v) {
+    brms::bf(stats::as.formula(paste0(v, " | mi() ~ 1")), family = stats::gaussian()) 
   })
+  
+  # Imputation formulas for Factor variables (Gaussian approximation for simplicity/compatibility)
+  mi_formulas_factor <- lapply(vars_factor_na, function(v) {
+    message(paste("Warning: Imputing multi-level factor", v, "using Gaussian approximation."))
+    brms::bf(stats::as.formula(paste0(v, " | mi() ~ 1")), family = stats::gaussian()) 
+  })
+  
+  mi_formulas <- c(mi_formulas_numeric, mi_formulas_factor)
   
   full_formula <- Reduce(`+`, c(list(main_formula), mi_formulas))
   
-  default_priors <- get_prior(formula = full_formula, data = df)
+  default_priors <- brms::get_prior(formula = full_formula, data = df) 
   
   fit <- do.call(
-    brm,
+    brms::brm,
     c(
       list(
         formula = full_formula,
-        data    = df,
+        data    = df, 
         prior   = default_priors
       ),
       brms_args
     )
   )
   
-  fit
+  return(fit)
 }
 
 # looping logic for running all models for one trajectory
@@ -2500,16 +2549,3 @@ big_gt <- df_big_wide %>%
 big_gt
 ```
 ---
-
-
-
-
-
-
-
-
-
-
-
-
-
